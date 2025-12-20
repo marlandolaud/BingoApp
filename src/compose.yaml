@@ -1,0 +1,7 @@
+﻿services:
+  bingobongo:
+    image: bingobongo
+    build:
+      context: .
+      dockerfile: BingoBongo/Dockerfile
+
