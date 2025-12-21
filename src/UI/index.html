@@ -1,38 +1,162 @@
-<!DOCTYPE html>
-<html>
-<style type="text/css">
-
-    .ball .eight {
-        width: 110px;
-        height: 110px;
-        margin: 30%;
-        background: gray;
-        border-radius: 50%;
-        position: absolute;
-    }
-    .ball .eight:before {
-        content: "B15";
-        display: block;
-        position: absolute;
-        text-align: center;
-        height: 80px;
-        width: 100px;
-        left: 50px;
-        margin-left: -40px;
-        top: 44px;
-        margin-top: -40px;
-        color: black;
-        font-family: Arial;
-    }
-</style>
+<!doctype html>
+<html lang="en">
 <head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bingo Current Number</title>
+<style>
+  :root{
+    --bg:#0f1720;
+    --card:#0b1220;
+    --accent:#10b981;
+    --muted:#94a3b8;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#071022);font-family:Inter,system-ui,Arial;color:white}
+  .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;gap:28px}
+  /* large centered circle */
+  .big{
+    display:grid;place-items:center;
+    width:clamp(180px,28vmin,420px);
+    height:clamp(180px,28vmin,420px);
+    border-radius:50%;
+    background:radial-gradient(circle at 30% 25%, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 30%), linear-gradient(180deg,#07202b,#001218);
+    box-shadow:0 12px 30px rgba(3,7,18,0.6), inset 0 6px 18px rgba(255,255,255,0.02);
+    border:4px solid rgba(255,255,255,0.04);
+    text-align:center;
+  }
+  .big .num{
+    font-weight:700;
+    font-size:clamp(28px,12vmin,120px);
+    line-height:1;
+    color:var(--accent);
+    text-shadow:0 6px 24px rgba(16,185,129,0.12);
+    user-select:none;
+  }
+  .big .label{font-size:14px;color:var(--muted);margin-top:6px}
+
+  /* history row */
+  .history-wrap{width:100%;max-width:1100px}
+  .history-title{font-size:13px;color:var(--muted);margin:0 0 8px 8px}
+  .history{
+    display:flex;
+    gap:12px;
+    padding:12px;
+    overflow:hidden;
+    align-items:center;
+    border-radius:12px;
+    background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    box-shadow:0 6px 18px rgba(2,6,12,0.5);
+  }
+  .track{
+    display:flex;
+    gap:12px;
+    align-items:center;
+    transition:transform 300ms ease;
+    will-change:transform;
+  }
+  .dot{
+    min-width:56px;
+    min-height:56px;
+    display:grid;place-items:center;
+    border-radius:50%;
+    background:linear-gradient(180deg,#071a25,#06202b);
+    border:2px solid rgba(255,255,255,0.03);
+    color:#cfeee1;
+    font-weight:600;
+    box-shadow:0 8px 18px rgba(6,14,20,0.6);
+    flex-shrink:0;
+  }
+  .dot.small{min-width:44px;min-height:44px;font-size:14px}
+  .dot .sub{display:block;font-size:11px;color:var(--muted);font-weight:500;margin-top:6px}
+  /* allow horizontal scroll on small screens */
+  @media (max-width:540px){
+    .history{overflow:auto}
+  }
+</style>
 </head>
 <body>
-<section class="stage">
-    <figure class="ball">
-        <span class="shadow"></span>
-        <span class="eight"></span>
-    </figure>
-</section>
+  <div class="wrap" role="main" aria-live="polite">
+    <div class="big" id="big">
+      <div>
+        <div class="num" id="currentNumber">--</div>
+        <div class="label">Current Number</div>
+      </div>
+    </div>
+
+    <div class="history-wrap">
+      <div class="history-title">History</div>
+      <div class="history" id="historyContainer" aria-label="Called numbers history">
+        <div class="track" id="track"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  let state = {
+    currentNumber: 'Push',
+    history: []
+  };
+
+  const elCurrent = document.getElementById('currentNumber');
+  const track = document.getElementById('track');
+  const historyContainer = document.getElementById('historyContainer');
+  let gameKey = undefined;
+
+  function render(){
+    elCurrent.textContent = state.currentNumber ?? '--';
+
+    // clear & render track
+    track.innerHTML = '';
+
+    for (const [key, value] of Object.entries(state.history)) {
+    console.log(`>>>>> ${key}: ${value}`);
+        const d = document.createElement('div');
+        d.className = 'dot small';
+        d.textContent = value;
+        track.appendChild(d);
+    }
+
+    requestAnimationFrame(()=> {
+      if (historyContainer.scrollWidth > historyContainer.clientWidth) {
+        historyContainer.scrollTo({ left: historyContainer.scrollWidth, behavior: 'smooth' });
+      }
+    });
+  }
+
+  function pushNumber(n){
+    if (n == null) return;
+    state.currentNumber = n;
+    // keep history max 75
+    state.history = [...state.history.filter(x=>x!==n), n].slice(-75);
+    render();
+  }
+
+  async function fetchGame(gameKey){
+    try{
+      const res = await fetch('http://localhost:5001/Get?GameKey=' + encodeURIComponent(gameKey));
+      if(!res.ok) throw new Error('fetch failed');
+      const json = await res.json();
+      console.log('Fetched game state:', json);
+      state.currentNumber = json.currentNumber;
+      state.history = json.history || [];
+      render();
+    }catch(e){alert(e.message);}
+  }
+  
+
+  render();
+
+  elCurrent.addEventListener('click', async function() {
+        if (!gameKey) {
+            const res = await fetch('http://localhost:5001/GetGameKey');
+            if(!res.ok) throw new Error('Game key fetch failed');
+            const temp = await res.json();
+            gameKey = temp;
+            console.log('Fetched game key:', gameKey);
+        }
+        await fetchGame(gameKey); 
+    }, false);
+   
+</script>
 </body>
 </html>
