@@ -43,3 +43,23 @@ test('exposes window.BingoApi when loaded as a browser script', () => {
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), window, { filename: file });
   assert.equal(window.BingoApi.apiBase({ protocol: 'http:', hostname: 'x' }), 'http://x:5001');
 });
+
+test('uses a configured API base instead of the :5001 default', () => {
+  assert.equal(apiBase({ protocol: 'https:', hostname: 'abc.ngrok.app' }, '/api'), '/api');
+});
+
+test('drops a trailing slash from the configured API base', () => {
+  assert.equal(apiBase({ protocol: 'http:', hostname: 'localhost' }, '/api/'), '/api');
+});
+
+test('ignores an empty configured API base', () => {
+  assert.equal(apiBase({ protocol: 'http:', hostname: 'box' }, ''), 'http://box:5001');
+});
+
+test('ignores a configured API base that is not a string', () => {
+  assert.equal(apiBase({ protocol: 'http:', hostname: 'box' }, null), 'http://box:5001');
+});
+
+test('ignores a truthy configured API base that is not a string', () => {
+  assert.equal(apiBase({ protocol: 'http:', hostname: 'box' }, true), 'http://box:5001');
+});

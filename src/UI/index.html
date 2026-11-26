@@ -141,6 +141,7 @@
   </div>
 
 <script src="board.js"></script>
+<script src="config.js"></script>
 <script src="api.js"></script>
 <script>
   let state = {
@@ -152,7 +153,7 @@
   const track = document.getElementById('track');
   const historyContainer = document.getElementById('historyContainer');
   let gameKey = undefined;
-  const API = BingoApi.apiBase(window.location);
+  const API = BingoApi.apiBase(window.location, window.BINGO_API_BASE);
 
   const boardBody = document.getElementById('boardBody');
 

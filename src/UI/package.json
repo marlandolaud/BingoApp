@@ -9,6 +9,7 @@
     "test:mutation": "stryker run",
     "serve": "http-server -a 0.0.0.0 -p 8080 -c-1 .",
     "api": "DOTNET_ROLL_FORWARD=Major dotnet run --project ../BingoBongo/BingoBongo.csproj --launch-profile lan",
+    "test:docker": "DOCKER=1 playwright test --project=docker",
     "test:lan": "LAN=1 playwright test --project=integration lan.spec.js"
   },
   "devDependencies": {

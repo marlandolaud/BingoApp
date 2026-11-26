@@ -1,7 +1,36 @@
-﻿services:
-  bingobongo:
+# docker compose up --build   -> UI on http://localhost:${UI_PORT:-8080}, public via ngrok
+# Copy .env.example to .env first (ngrok token + basic auth credentials).
+services:
+  api:
     image: bingobongo
     build:
       context: .
       dockerfile: BingoBongo/Dockerfile
+    restart: unless-stopped
+    # not published: only reachable through the ui proxy
 
+  ui:
+    image: bingobongo-ui
+    build:
+      context: UI
+    depends_on:
+      - api
+    restart: unless-stopped
+    ports:
+      - "${UI_PORT:-8080}:80"
+
+  ngrok:
+    image: ngrok/ngrok:3
+    depends_on:
+      - ui
+    entrypoint: ["sh", "/ngrok/start.sh"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+      NGROK_URL: ${NGROK_URL:-}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-}
+      BASIC_AUTH_PASS: ${BASIC_AUTH_PASS:-}
+    volumes:
+      - ./ngrok:/ngrok:ro
+    ports:
+      - "127.0.0.1:${NGROK_INSPECT_PORT:-4040}:4040"   # local inspector, shows the public URL
+    restart: on-failure:3

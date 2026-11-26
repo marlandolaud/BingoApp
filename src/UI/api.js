@@ -3,7 +3,10 @@
 (function (root) {
   const API_PORT = 5001;
 
-  function apiBase(location) {
+  // `configured` (window.BINGO_API_BASE, set by config.js) wins when present, e.g.
+  // '/api' when the UI and API sit behind the same reverse proxy (Docker / ngrok).
+  function apiBase(location, configured) {
+    if (typeof configured === 'string' && configured) return configured.replace(/\/$/, '');
     if (location.protocol === 'file:' || !location.hostname) {
       return 'http://localhost:' + API_PORT;
     }
