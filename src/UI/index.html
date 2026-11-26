@@ -106,9 +106,14 @@
   }
   .board td.cell.called{color:#04130d;background:var(--accent);border-color:var(--accent)}
   .board td.cell.last{outline:2px solid #fff;outline-offset:1px}
+  /* phones: shrink the 15-column board so it fits the screen without scrolling */
   @media (max-width:720px){
-    .board-wrap{overflow-x:auto}
-    .board{min-width:640px}
+    .wrap{padding:16px 8px}
+    .board{border-spacing:2px;padding:4px}
+    .board th{font-size:14px;width:22px}
+    .board th .count{font-size:9px}
+    .board td.cell{padding:4px 0;border-radius:4px;font-size:clamp(9px,2.9vw,14px);letter-spacing:-0.03em}
+    .board td.cell.last{outline-width:1px;outline-offset:0}
   }
 </style>
 </head>

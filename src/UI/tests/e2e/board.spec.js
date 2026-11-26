@@ -77,3 +77,40 @@ test('reset clears the board', async ({ page }) => {
   await expect(page.locator('td.cell.called')).toHaveCount(0);
   await expect(page.locator('tr[data-letter] .count')).toHaveText(['0', '0', '0', '0', '0']);
 });
+
+for (const width of [320, 375, 414]) {
+  test(`board fits a ${width}px phone screen without horizontal scrolling`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await mockApi(page, []);
+    await page.goto('/');
+    const sizes = await page.evaluate(() => {
+      const wrap = document.querySelector('.board-wrap');
+      const board = document.getElementById('board').getBoundingClientRect();
+      return {
+        wrapScroll: wrap.scrollWidth, wrapClient: wrap.clientWidth,
+        docScroll: document.documentElement.scrollWidth, viewport: window.innerWidth,
+        boardRight: board.right,
+      };
+    });
+    expect(sizes.wrapScroll).toBeLessThanOrEqual(sizes.wrapClient);
+    expect(sizes.docScroll).toBeLessThanOrEqual(sizes.viewport);
+    expect(sizes.boardRight).toBeLessThanOrEqual(width);
+  });
+}
+
+test('every two-digit board number is fully visible on a 320px screen', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await mockApi(page, []);
+  await page.goto('/');
+  const clipped = await page.evaluate(() =>
+    [...document.querySelectorAll('td.cell')].filter(td => td.scrollWidth > td.clientWidth).length);
+  expect(clipped).toBe(0);
+});
+
+test('board keeps its roomy desktop sizing on wide screens', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mockApi(page, []);
+  await page.goto('/');
+  await expect(page.locator('td.cell').first()).toHaveCSS('font-size', '14px');
+  await expect(page.locator('.board th').first()).toHaveCSS('font-size', '20px');
+});
