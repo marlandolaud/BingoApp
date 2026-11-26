@@ -9,13 +9,13 @@ public class BingoController : Controller
 {
     private readonly IMemoryCache _memoryCache;
     private readonly ILogger<BingoController> _logger;
-    private readonly Random _rand;
+    private static readonly string[] Letters = ["B", "I", "N", "G", "O"];
+    private readonly Random _rand = Random.Shared;
 
     public BingoController(IMemoryCache memoryCache, ILogger<BingoController> logger)
     {
         _memoryCache = memoryCache;
         _logger = logger;
-        _rand =  new Random(DateTime.Now.Millisecond);
     }
 
     [HttpPost("Reset")]
@@ -58,23 +58,24 @@ public class BingoController : Controller
             return Ok("Game Over!");
         }
 
-        string bingoSelection = null;
-        int count = 0;
-        do
-        {
-            var next = _rand.Next(1, 76);
-            bingoSelection = next switch
-            {
-                >= 1 and <= 15 => $"B{next}",
-                >= 16 and <= 30 => $"I{next}",
-                >= 31 and <= 45 => $"N{next}",
-                >= 46 and <= 60 => $"G{next}",
-                >= 61 and <= 75 => $"O{next}",
-                _ => throw new ArgumentOutOfRangeException()
-            };
-            count++;
-        } while (myBingoHistory.Values.Contains(bingoSelection));
-        _logger.LogInformation("bingoSelection:{bingoSelection} count:{count}",  bingoSelection, count);
+        // Balanced draw: pick among the letters called least so far (that still
+        // have numbers left), then a random uncalled number within that letter.
+        // Keeps every letter within one call of the others.
+        var called = myBingoHistory.Values.ToHashSet();
+        var remainingByLetter = Letters
+            .Select((letter, i) => (
+                Letter: letter,
+                Remaining: Enumerable.Range(i * 15 + 1, 15)
+                    .Select(n => $"{letter}{n}")
+                    .Where(ball => !called.Contains(ball))
+                    .ToList()))
+            .Where(x => x.Remaining.Count > 0)
+            .ToList();
+        var mostRemaining = remainingByLetter.Max(x => x.Remaining.Count);
+        var candidates = remainingByLetter.Where(x => x.Remaining.Count == mostRemaining).ToList();
+        var chosen = candidates[_rand.Next(candidates.Count)];
+        var bingoSelection = chosen.Remaining[_rand.Next(chosen.Remaining.Count)];
+        _logger.LogInformation("bingoSelection:{bingoSelection}", bingoSelection);
         
         myBingoHistory.Add(myBingoHistory.Count, bingoSelection);
         _memoryCache.Set(GameKey, myBingoHistory);
