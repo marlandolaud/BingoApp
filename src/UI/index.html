@@ -91,6 +91,25 @@
   @media (max-width:540px){
     .history{overflow:auto}
   }
+  /* called-numbers board: one row per letter */
+  .board-wrap{width:100%;max-width:1100px}
+  .board{width:100%;border-collapse:separate;border-spacing:4px;table-layout:fixed;
+    padding:8px;border-radius:12px;background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    box-shadow:0 6px 18px rgba(2,6,12,0.5)}
+  .board th{font-size:20px;font-weight:800;color:var(--accent);width:44px;text-align:center}
+  .board th .letter{display:block}
+  .board th .count{display:block;font-size:11px;font-weight:500;color:var(--muted)}
+  .board td.cell{
+    text-align:center;padding:6px 0;border-radius:6px;font-size:14px;font-weight:600;
+    color:rgba(207,238,225,0.35);background:#071a25;border:1px solid rgba(255,255,255,0.03);
+    font-variant-numeric:tabular-nums;
+  }
+  .board td.cell.called{color:#04130d;background:var(--accent);border-color:var(--accent)}
+  .board td.cell.last{outline:2px solid #fff;outline-offset:1px}
+  @media (max-width:720px){
+    .board-wrap{overflow-x:auto}
+    .board{min-width:640px}
+  }
 </style>
 </head>
 <body>
@@ -115,8 +134,13 @@
         <div class="track" id="track"></div>
       </div>
     </div>
+    <div class="board-wrap">
+      <div class="history-title">Called by letter</div>
+      <table class="board" id="board" aria-label="Called numbers by letter"><tbody id="boardBody"></tbody></table>
+    </div>
   </div>
 
+<script src="board.js"></script>
 <script>
   let state = {
     currentNumber: 'Push',
@@ -128,7 +152,37 @@
   const historyContainer = document.getElementById('historyContainer');
   let gameKey = undefined;
 
+  const boardBody = document.getElementById('boardBody');
+
+  function renderBoard(){
+    boardBody.innerHTML = '';
+    for (const row of BingoBoard.buildBoard(state.history)) {
+      const tr = document.createElement('tr');
+      tr.dataset.letter = row.letter;
+      const th = document.createElement('th');
+      th.scope = 'row';
+      const letter = document.createElement('span');
+      letter.className = 'letter';
+      letter.textContent = row.letter;
+      th.appendChild(letter);
+      const count = document.createElement('span');
+      count.className = 'count';
+      count.textContent = row.calledCount;
+      th.appendChild(count);
+      tr.appendChild(th);
+      for (const c of row.numbers) {
+        const td = document.createElement('td');
+        td.className = 'cell' + (c.called ? ' called' : '') + (c.last ? ' last' : '');
+        td.textContent = c.number;
+        td.setAttribute('aria-label', row.letter + c.number + (c.called ? ' called' : ''));
+        tr.appendChild(td);
+      }
+      boardBody.appendChild(tr);
+    }
+  }
+
   function render(){
+    renderBoard();
     elCurrent.textContent = state.currentNumber ?? '--';
 
     // clear & render track
