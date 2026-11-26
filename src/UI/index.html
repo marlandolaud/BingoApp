@@ -208,7 +208,7 @@
 
   render();
 
-  elCurrent.addEventListener('click', async function() {
+  async function drawNext() {
         playDrawSound();
         if (!gameKey) {
             const res = await fetch('http://localhost:5001/GetGameKey');
@@ -218,9 +218,10 @@
             console.log('Fetched game key:', gameKey);
         }
         await fetchGame(gameKey);
-    }, false);
+    }
+  elCurrent.addEventListener('click', drawNext, false);
 
-  document.getElementById('resetBtn').addEventListener('click', async () => {
+  async function resetGame() {
     if (!confirm('Reset the game? All drawn numbers will be cleared.')) return;
     try{
       if (gameKey) {
@@ -231,6 +232,16 @@
       state.history = [];
       render();
     }catch(e){alert(e.message);}
+  }
+  document.getElementById('resetBtn').addEventListener('click', resetGame);
+
+  // keyboard shortcuts: Enter = draw next number, Escape = reset game
+  document.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    // let focused buttons/inputs handle their own Enter, so it doesn't fire twice
+    if (e.target.closest('button, input, textarea, select, a')) return;
+    if (e.key === 'Enter') { e.preventDefault(); drawNext(); }
+    else if (e.key === 'Escape') { e.preventDefault(); resetGame(); }
   });
    
 </script>
