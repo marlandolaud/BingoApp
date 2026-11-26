@@ -13,7 +13,7 @@ module.exports = defineConfig({
     { command: 'npx http-server -p 8080 -c-1 -s .', url: 'http://localhost:8080', reuseExistingServer: true },
     ...(process.env.INTEGRATION
       ? [{
-          command: 'dotnet run --project ../BingoBongo/BingoBongo.csproj --no-launch-profile --urls http://localhost:5001',
+          command: 'DOTNET_ROLL_FORWARD=Major dotnet run --project ../BingoBongo/BingoBongo.csproj --no-launch-profile --urls http://localhost:5001',
           url: 'http://localhost:5001/GetGameKey',
           reuseExistingServer: true,
           timeout: 120000,

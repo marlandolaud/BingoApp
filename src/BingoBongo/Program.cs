@@ -10,7 +10,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy => policy
-        .WithOrigins("http://localhost:8080", "http://127.0.0.1:8080")
+        .SetIsOriginAllowed(BingoBongo.LanCorsPolicy.IsAllowedOrigin)
         .AllowAnyHeader()
         .AllowAnyMethod());
 });
@@ -33,3 +33,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }

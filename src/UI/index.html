@@ -141,6 +141,7 @@
   </div>
 
 <script src="board.js"></script>
+<script src="api.js"></script>
 <script>
   let state = {
     currentNumber: 'Push',
@@ -151,6 +152,7 @@
   const track = document.getElementById('track');
   const historyContainer = document.getElementById('historyContainer');
   let gameKey = undefined;
+  const API = BingoApi.apiBase(window.location);
 
   const boardBody = document.getElementById('boardBody');
 
@@ -213,7 +215,7 @@
 
   async function fetchGame(gameKey){
     try{
-      const res = await fetch('http://localhost:5001/Get?GameKey=' + encodeURIComponent(gameKey));
+      const res = await fetch(API + '/Get?GameKey=' + encodeURIComponent(gameKey));
       if(!res.ok) throw new Error('fetch failed');
       const json = await res.json();
       console.log('Fetched game state:', json);
@@ -265,7 +267,7 @@
   async function drawNext() {
         playDrawSound();
         if (!gameKey) {
-            const res = await fetch('http://localhost:5001/GetGameKey');
+            const res = await fetch(API + '/GetGameKey');
             if(!res.ok) throw new Error('Game key fetch failed');
             const temp = await res.json();
             gameKey = temp;
@@ -279,7 +281,7 @@
     if (!confirm('Reset the game? All drawn numbers will be cleared.')) return;
     try{
       if (gameKey) {
-        const res = await fetch('http://localhost:5001/Reset?GameKey=' + encodeURIComponent(gameKey), { method: 'POST' });
+        const res = await fetch(API + '/Reset?GameKey=' + encodeURIComponent(gameKey), { method: 'POST' });
         if(!res.ok) throw new Error('Reset failed');
       }
       state.currentNumber = 'Push';
