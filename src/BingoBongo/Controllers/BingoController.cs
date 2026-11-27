@@ -1,6 +1,8 @@
 using System.Text;
 using BingoBongo.Games;
+using BingoBongo.Live;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace BingoBongo;
 
@@ -46,6 +48,30 @@ public class BingoController : Controller
         return Ok(await _games.GetDealerSnapshotAsync(GameKey, ct));
     }
     
+    [HttpGet("Events")]
+    public async Task<IActionResult> Events(
+        [FromQuery] Guid GameKey,
+        [FromServices] GameEventHub hub,
+        [FromServices] IServiceScopeFactory scopes,
+        [FromServices] IOptions<LiveOptions> live)
+    {
+        if (GameKey == Guid.Empty)
+        {
+            return BadRequest("GameKey is empty");
+        }
+
+        // The stream outlives any one DbContext's useful life, so each load gets a fresh scope.
+        async Task<GameSnapshot?> Load(CancellationToken ct)
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<GameStore>().GetDealerSnapshotAsync(GameKey, ct);
+        }
+
+        await SseStream.RunAsync(HttpContext, GameKey, Load, presence: null, hub,
+            TimeSpan.FromSeconds(live.Value.HeartbeatSeconds));
+        return new EmptyResult();
+    }
+
     [HttpGet("Get")]
     public async Task<IActionResult> Index([FromQuery] Guid GameKey, CancellationToken ct)
     {

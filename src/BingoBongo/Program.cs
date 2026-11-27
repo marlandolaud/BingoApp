@@ -1,5 +1,6 @@
 using BingoBongo.Data;
 using BingoBongo.Games;
+using BingoBongo.Live;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,8 @@ builder.Services.Configure<AutoPilotOptions>(builder.Configuration.GetSection("A
 builder.Services.Configure<LiveOptions>(builder.Configuration.GetSection("Live"));
 builder.Services.AddScoped<GameStore>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<GameEventHub>();
+builder.Services.AddHostedService<PgNotificationListener>();
 builder.Services.AddDbContext<BingoDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("Bingo")));
 builder.Services.AddCors(options =>
