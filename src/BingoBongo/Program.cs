@@ -1,4 +1,5 @@
 using BingoBongo.Data;
+using BingoBongo.Games;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,7 +10,9 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddMemoryCache();
+builder.Services.Configure<AutoPilotOptions>(builder.Configuration.GetSection("AutoPilot"));
+builder.Services.Configure<LiveOptions>(builder.Configuration.GetSection("Live"));
+builder.Services.AddScoped<GameStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDbContext<BingoDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("Bingo")));

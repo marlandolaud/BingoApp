@@ -1,32 +1,30 @@
 using System.Text;
 using BingoBongo.Games;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace BingoBongo;
 
 [ApiController]
 public class BingoController : Controller
 {
-    private readonly IMemoryCache _memoryCache;
+    private readonly GameStore _games;
     private readonly ILogger<BingoController> _logger;
-    private readonly Random _rand = Random.Shared;
 
-    public BingoController(IMemoryCache memoryCache, ILogger<BingoController> logger)
+    public BingoController(GameStore games, ILogger<BingoController> logger)
     {
-        _memoryCache = memoryCache;
+        _games = games;
         _logger = logger;
     }
 
     [HttpPost("Reset")]
-    public IActionResult Reset([FromQuery]  Guid GameKey)
+    public async Task<IActionResult> Reset([FromQuery] Guid GameKey, CancellationToken ct)
     {
         if (GameKey == Guid.Empty)
         {
             return BadRequest("GameKey is empty");
         }
-        
-        _memoryCache.Set(GameKey, new Dictionary<int,string>());
+
+        await _games.ResetAsync(GameKey, ct);
         return Ok();
     }
     
@@ -36,39 +34,39 @@ public class BingoController : Controller
     {
         return Ok(Guid.NewGuid());
     }
-    
-    [HttpGet("Get")]
-    public IActionResult Index([FromQuery] Guid GameKey)
+
+    [HttpGet("State")]
+    public async Task<IActionResult> State([FromQuery] Guid GameKey, CancellationToken ct)
     {
         if (GameKey == Guid.Empty)
         {
             return BadRequest("GameKey is empty");
         }
-        
-        _memoryCache.TryGetValue(GameKey, out Dictionary<int,string> myBingoHistory);
-        if (myBingoHistory == null)
+
+        return Ok(await _games.GetDealerSnapshotAsync(GameKey, ct));
+    }
+    
+    [HttpGet("Get")]
+    public async Task<IActionResult> Index([FromQuery] Guid GameKey, CancellationToken ct)
+    {
+        if (GameKey == Guid.Empty)
         {
-            _logger.LogInformation("No bingo history found");
-            myBingoHistory = new Dictionary<int,string>();
+            return BadRequest("GameKey is empty");
         }
 
-        var numberOfDraws = myBingoHistory.Count;
-        if (numberOfDraws >= 75)
+        var draw = await _games.DrawAsync(GameKey, ct);
+        if (draw.GameOver)
         {
             return Ok("Game Over!");
         }
 
-        var bingoSelection = BallPicker.Next(myBingoHistory.Values.ToHashSet(), _rand)!;
-        _logger.LogInformation("bingoSelection:{bingoSelection}", bingoSelection);
-        
-        myBingoHistory.Add(myBingoHistory.Count, bingoSelection);
-        _memoryCache.Set(GameKey, myBingoHistory);
+        _logger.LogInformation("bingoSelection:{bingoSelection}", draw.Ball);
 
         var response = new ResponseDto()
         {
-            NumberOfDrew = myBingoHistory.Count,
-            CurrentNumber = bingoSelection,
-            History = myBingoHistory
+            NumberOfDrew = draw.History.Count,
+            CurrentNumber = draw.Ball!,
+            History = new Dictionary<int, string>(draw.History)
         };
         
         return Ok(response);
