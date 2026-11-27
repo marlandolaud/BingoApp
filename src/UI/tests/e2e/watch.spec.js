@@ -1,0 +1,131 @@
+const { test, expect } = require('@playwright/test');
+
+const V = '44444444-4444-4444-4444-444444444444';
+const JOIN = '33333333-3333-3333-3333-333333333333';
+const API = 'http://localhost:5001';
+const T0 = Date.parse('2026-11-27T12:00:00.000Z');
+
+function snapshot(overrides = {}) {
+  return {
+    round: 1, numberOfDrew: 0, currentNumber: null, history: {},
+    autoPilot: { on: false, nextDrawAt: null },
+    serverTime: new Date(T0).toISOString(), viewerCount: 2, joinCode: null,
+    ...overrides,
+  };
+}
+
+const sse = (snap) => ({
+  status: 200,
+  headers: { 'content-type': 'text/event-stream' },
+  // long retry so a finished body does not reconnect during the test
+  body: 'retry: 60000\nevent: state\ndata: ' + JSON.stringify(snap) + '\n\n',
+});
+
+// Mocks the viewer endpoints; `opts.eventsHandler` overrides the SSE response.
+async function mockApi(page, snap, opts = {}) {
+  const requests = [];
+  await page.route(`${API}/**`, r => {
+    const url = new URL(r.request().url());
+    requests.push({ method: r.request().method(), path: url.pathname, search: url.search });
+    if (url.pathname === '/viewers') {
+      return opts.joinMissing
+        ? r.fulfill({ status: 404, body: '' })
+        : r.fulfill({ json: { viewerId: V } });
+    }
+    if (url.pathname === `/watch/${V}/state`) {
+      return opts.viewerMissing ? r.fulfill({ status: 404, body: '' }) : r.fulfill({ json: snap });
+    }
+    if (url.pathname === `/watch/${V}/events`) {
+      return opts.eventsHandler ? opts.eventsHandler(r) : r.fulfill(sse(snap));
+    }
+    return r.fulfill({ status: 404, body: '' });
+  });
+  return requests;
+}
+
+// A mocked SSE body ends right away, so the browser flips back to "reconnecting"
+// immediately. Record every status the page showed instead of sampling it.
+async function recordStatuses(page) {
+  await page.addInitScript(() => {
+    window.__statuses = [];
+    document.addEventListener('DOMContentLoaded', () => {
+      const el = document.getElementById('status');
+      const note = () => window.__statuses.push(el.textContent);
+      new MutationObserver(note).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+  });
+}
+const sawStatus = (page, text) => expect.poll(() => page.evaluate(() => window.__statuses)).toContain(text);
+
+test('join swaps to a personal viewer url', async ({ page }) => {
+  await mockApi(page, snapshot());
+  await page.goto('/watch.html?join=' + JOIN);
+  await expect(page).toHaveURL(new RegExp('watch\\.html\\?v=' + V + '$'));
+});
+
+test('renders snapshot from the event stream', async ({ page }) => {
+  const snap = snapshot({ numberOfDrew: 4, currentNumber: 'O70', history: { 0: 'B5', 1: 'I20', 2: 'N35', 3: 'O70' } });
+  await mockApi(page, snap);
+  await recordStatuses(page);
+  await page.goto('/watch.html?v=' + V);
+  await expect(page.locator('#currentNumber')).toHaveText('O70');
+  await expect(page.locator('#boardBody td.called')).toHaveCount(4);
+  await expect(page.locator('#track .dot')).toHaveCount(4);
+  await sawStatus(page, 'Live');
+});
+
+test('unknown join shows game not found', async ({ page }) => {
+  await mockApi(page, snapshot(), { joinMissing: true });
+  await page.goto('/watch.html?join=' + JOIN);
+  await expect(page.locator('#notFound')).toBeVisible();
+  await expect(page.locator('#notFound')).toHaveText('Game not found');
+});
+
+test('unknown viewer shows game not found', async ({ page }) => {
+  await mockApi(page, snapshot(), { viewerMissing: true });
+  await page.goto('/watch.html?v=' + V);
+  await expect(page.locator('#notFound')).toBeVisible();
+  await expect(page.locator('#currentNumber')).toHaveText('--');
+});
+
+test('page without a join code or viewer id shows game not found', async ({ page }) => {
+  await mockApi(page, snapshot());
+  await page.goto('/watch.html');
+  await expect(page.locator('#notFound')).toBeVisible();
+});
+
+test('shows countdown and waiting for dealer when overdue', async ({ page }) => {
+  await page.clock.install({ time: T0 });
+  const snap = snapshot({ autoPilot: { on: true, nextDrawAt: new Date(T0 + 3000).toISOString() } });
+  await mockApi(page, snap);
+  await page.goto('/watch.html?v=' + V);
+  await expect(page.locator('#countdown')).toHaveText('Next ball in 3s');
+  await page.clock.runFor(9000);
+  await expect(page.locator('#countdown')).toHaveText('Waiting for dealer…');
+  await expect(page.locator('#status')).toHaveText('Waiting for dealer…');
+});
+
+test('reconnecting then live', async ({ page }) => {
+  let calls = 0;
+  const snap = snapshot();
+  await mockApi(page, snap, {
+    eventsHandler: r => (++calls === 1 ? r.abort() : r.fulfill(sse(snap))),
+  });
+  await recordStatuses(page);
+  await page.goto('/watch.html?v=' + V);
+  await sawStatus(page, 'Reconnecting…');
+  await expect.poll(() => page.evaluate(() => window.__statuses), { timeout: 10000 }).toContain('Live');
+  const seen = await page.evaluate(() => window.__statuses);
+  expect(seen.indexOf('Reconnecting…')).toBeLessThan(seen.indexOf('Live'));
+});
+
+test('viewer never calls dealer endpoints', async ({ page }) => {
+  const requests = await mockApi(page, snapshot({ currentNumber: 'B5', history: { 0: 'B5' } }));
+  await page.goto('/watch.html?join=' + JOIN);
+  await expect(page.locator('#currentNumber')).toHaveText('B5');
+  await page.locator('#currentNumber').click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  expect(requests.length).toBeGreaterThan(0);
+  expect(requests.filter(r => /Get|Reset|AutoPilot|GetGameKey|\/State|\/Events/.test(r.path))).toEqual([]);
+});

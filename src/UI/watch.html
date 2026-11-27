@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bingo Live Viewer</title>
+<style>
+  :root{
+    --bg:#0f1720;
+    --card:#0b1220;
+    --accent:#10b981;
+    --muted:#94a3b8;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#071022);font-family:Inter,system-ui,Arial;color:white}
+  body{display:flex;flex-direction:column}
+  /* header */
+  .app-header{
+    display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    padding:16px 24px;
+    background:rgba(255,255,255,0.02);
+    border-bottom:1px solid rgba(255,255,255,0.05);
+  }
+  .app-header h1{margin:0;font-size:22px;font-weight:800;letter-spacing:0.04em}
+  .app-header h1 span{color:var(--accent)}
+  .wrap{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;gap:28px}
+  /* large centered circle */
+  .big{
+    display:grid;place-items:center;
+    width:clamp(180px,28vmin,420px);
+    height:clamp(180px,28vmin,420px);
+    border-radius:50%;
+    background:radial-gradient(circle at 30% 25%, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 30%), linear-gradient(180deg,#07202b,#001218);
+    box-shadow:0 12px 30px rgba(3,7,18,0.6), inset 0 6px 18px rgba(255,255,255,0.02);
+    border:4px solid rgba(255,255,255,0.04);
+    text-align:center;
+  }
+  .big .num{
+    font-weight:700;
+    font-size:clamp(28px,12vmin,120px);
+    line-height:1;
+    color:var(--accent);
+    text-shadow:0 6px 24px rgba(16,185,129,0.12);
+    user-select:none;
+  }
+  .big .label{font-size:14px;color:var(--muted);margin-top:6px}
+  .countdown{margin-top:-14px;font-size:15px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+  .countdown:empty{display:none}
+
+  /* history row */
+  .history-wrap{width:100%;max-width:1100px}
+  .history-title{font-size:13px;color:var(--muted);margin:0 0 8px 8px}
+  .history{
+    display:flex;
+    gap:12px;
+    padding:12px;
+    overflow:hidden;
+    align-items:center;
+    border-radius:12px;
+    background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    box-shadow:0 6px 18px rgba(2,6,12,0.5);
+  }
+  .track{
+    display:flex;
+    gap:12px;
+    align-items:center;
+    transition:transform 300ms ease;
+    will-change:transform;
+  }
+  .dot{
+    min-width:56px;
+    min-height:56px;
+    display:grid;place-items:center;
+    border-radius:50%;
+    background:linear-gradient(180deg,#071a25,#06202b);
+    border:2px solid rgba(255,255,255,0.03);
+    color:#cfeee1;
+    font-weight:600;
+    box-shadow:0 8px 18px rgba(6,14,20,0.6);
+    flex-shrink:0;
+  }
+  .dot.small{min-width:44px;min-height:44px;font-size:14px}
+  .dot .sub{display:block;font-size:11px;color:var(--muted);font-weight:500;margin-top:6px}
+  /* allow horizontal scroll on small screens */
+  @media (max-width:540px){
+    .history{overflow:auto}
+  }
+  /* called-numbers board: one row per letter */
+  .board-wrap{width:100%;max-width:1100px}
+  .board{width:100%;border-collapse:separate;border-spacing:4px;table-layout:fixed;
+    padding:8px;border-radius:12px;background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    box-shadow:0 6px 18px rgba(2,6,12,0.5)}
+  .board th{font-size:20px;font-weight:800;color:var(--accent);width:44px;text-align:center}
+  .board th .letter{display:block}
+  .board th .count{display:block;font-size:11px;font-weight:500;color:var(--muted)}
+  .board td.cell{
+    text-align:center;padding:6px 0;border-radius:6px;font-size:14px;font-weight:600;
+    color:rgba(207,238,225,0.35);background:#071a25;border:1px solid rgba(255,255,255,0.03);
+    font-variant-numeric:tabular-nums;
+  }
+  .board td.cell.called{color:#04130d;background:var(--accent);border-color:var(--accent)}
+  .board td.cell.last{outline:2px solid #fff;outline-offset:1px}
+  /* phones: shrink the 15-column board so it fits the screen without scrolling */
+  @media (max-width:720px){
+    .wrap{padding:16px 8px}
+    .board{border-spacing:2px;padding:4px}
+    .board th{font-size:14px;width:22px}
+    .board th .count{font-size:9px}
+    .board td.cell{padding:4px 0;border-radius:4px;font-size:clamp(9px,2.9vw,14px);letter-spacing:-0.03em}
+    .board td.cell.last{outline-width:1px;outline-offset:0}
+  }
+  .status{font-size:13px;font-weight:600;color:var(--muted)}
+  .not-found{font-size:22px;font-weight:700;color:#fca5a5}
+  .not-found[hidden]{display:none}
+</style>
+</head>
+<body>
+  <header class="app-header">
+    <h1><span>BINGO</span> Live</h1>
+    <div class="status" id="status" role="status">Connecting…</div>
+  </header>
+  <div class="wrap" role="main" aria-live="polite">
+    <div class="not-found" id="notFound" hidden>Game not found</div>
+    <div class="big" id="big">
+      <div>
+        <div class="num" id="currentNumber">--</div>
+        <div class="label">Current Number</div>
+      </div>
+    </div>
+    <div class="countdown" id="countdown" aria-live="polite"></div>
+
+    <div class="history-wrap">
+      <div class="history-title">History</div>
+      <div class="history" id="historyContainer" aria-label="Called numbers history">
+        <div class="track" id="track"></div>
+      </div>
+    </div>
+    <div class="board-wrap">
+      <div class="history-title">Called by letter</div>
+      <table class="board" id="board" aria-label="Called numbers by letter"><tbody id="boardBody"></tbody></table>
+    </div>
+  </div>
+
+<script src="board.js"></script>
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script src="live.js"></script>
+<script>
+  // Read-only viewer: never draws, resets or controls auto pilot.
+  const API = BingoApi.apiBase(window.location, window.BINGO_API_BASE);
+  const elCurrent = document.getElementById('currentNumber');
+  const track = document.getElementById('track');
+  const historyContainer = document.getElementById('historyContainer');
+  const boardBody = document.getElementById('boardBody');
+  const countdownEl = document.getElementById('countdown');
+  const statusEl = document.getElementById('status');
+  const notFoundEl = document.getElementById('notFound');
+  const WAITING = 'Waiting for dealer…';
+
+  let snap = null;
+  let offsetMs = 0;
+  let events = null;
+  let connection = 'Connecting…';
+
+  function renderBoard(history) {
+    boardBody.replaceChildren();
+    for (const row of BingoBoard.buildBoard(history)) {
+      const tr = document.createElement('tr');
+      tr.dataset.letter = row.letter;
+      const th = document.createElement('th');
+      th.scope = 'row';
+      const letter = document.createElement('span');
+      letter.className = 'letter';
+      letter.textContent = row.letter;
+      th.appendChild(letter);
+      const count = document.createElement('span');
+      count.className = 'count';
+      count.textContent = row.calledCount;
+      th.appendChild(count);
+      tr.appendChild(th);
+      for (const c of row.numbers) {
+        const td = document.createElement('td');
+        td.className = 'cell' + (c.called ? ' called' : '') + (c.last ? ' last' : '');
+        td.textContent = c.number;
+        td.setAttribute('aria-label', row.letter + c.number + (c.called ? ' called' : ''));
+        tr.appendChild(td);
+      }
+      boardBody.appendChild(tr);
+    }
+  }
+
+  function render(view) {
+    renderBoard(view.history);
+    elCurrent.textContent = view.currentNumber;
+    track.replaceChildren();
+    for (const value of view.history) {
+      const d = document.createElement('div');
+      d.className = 'dot small';
+      d.textContent = value;
+      track.appendChild(d);
+    }
+    requestAnimationFrame(() => {
+      if (historyContainer.scrollWidth > historyContainer.clientWidth) {
+        historyContainer.scrollTo({ left: historyContainer.scrollWidth, behavior: 'smooth' });
+      }
+    });
+  }
+
+  function renderCountdown() {
+    const text = snap ? BingoLive.countdownText(snap, Date.now(), offsetMs) : '';
+    countdownEl.textContent = text;
+    statusEl.textContent = text === WAITING ? WAITING : connection;
+  }
+  setInterval(renderCountdown, 250);
+
+  function applySnapshot(s) {
+    snap = s;
+    render(BingoLive.viewState(s, '--'));
+    const offset = BingoLive.clockOffset(s.serverTime, Date.now());
+    if (!Number.isNaN(offset)) offsetMs = offset;
+    renderCountdown();
+  }
+
+  function setConnection(text) {
+    connection = text;
+    renderCountdown();
+  }
+
+  function showNotFound() {
+    notFoundEl.hidden = false;
+    statusEl.hidden = true;
+  }
+
+  function openEvents(viewerId) {
+    if (events || typeof EventSource === 'undefined') return;
+    events = new EventSource(API + '/watch/' + viewerId + '/events');
+    events.addEventListener('open', () => setConnection(BingoLive.statusText(events.readyState)));
+    events.addEventListener('state', (e) => {
+      try { applySnapshot(JSON.parse(e.data)); }
+      catch (err) { console.warn('Ignoring bad live update', err); }
+    });
+    events.addEventListener('error', () => {
+      if (events.readyState !== EventSource.OPEN) setConnection(BingoLive.statusText(events.readyState));
+    });
+  }
+
+  async function watch(viewerId) {
+    try {
+      // one-off check so an unknown viewer shows "not found" instead of reconnecting forever
+      const res = await fetch(API + '/watch/' + viewerId + '/state');
+      if (res.status === 404) return showNotFound();
+      if (res.ok) applySnapshot(await res.json());
+    } catch (e) { console.warn('Could not load the game', e); }
+    openEvents(viewerId);
+  }
+
+  async function join(joinCode) {
+    try {
+      const res = await fetch(API + '/viewers?join=' + encodeURIComponent(joinCode), { method: 'POST' });
+      if (!res.ok) return showNotFound();
+      const { viewerId } = await res.json();
+      const next = new URL(location.href);
+      next.searchParams.delete('join');
+      history.replaceState(null, '', BingoLive.withParam(next.toString(), 'v', viewerId));
+      watch(viewerId);
+    } catch (e) {
+      console.warn('Could not join the game', e);
+      setConnection('Reconnecting…');
+    }
+  }
+
+  const viewerId = BingoLive.viewerIdFromUrl(location.search);
+  const joinCode = BingoLive.joinCodeFromUrl(location.search);
+  if (viewerId) watch(viewerId);
+  else if (joinCode) join(joinCode);
+  else showNotFound();
+</script>
+</body>
+</html>
