@@ -16,5 +16,9 @@ case "$user" in *:*) fail "BASIC_AUTH_USER must not contain a colon" ;; esac
 
 json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
-printf '{"on_http_request":[{"actions":[{"type":"basic-auth","config":{"credentials":["%s:%s"]}}]}]}\n' \
-  "$(json_escape "$user")" "$(json_escape "$pass")"
+# Viewer paths (live watch page and its API) bypass basic auth; everything else,
+# including the dealer page and API, still requires it.
+expr="!(req.url.path in ['/watch.html','/board.js','/api.js','/config.js','/live.js','/api/viewers'] || req.url.path.startsWith('/api/watch/'))"
+
+printf '{"on_http_request":[{"expressions":["%s"],"actions":[{"type":"basic-auth","config":{"credentials":["%s:%s"]}}]}]}\n' \
+  "$expr" "$(json_escape "$user")" "$(json_escape "$pass")"
