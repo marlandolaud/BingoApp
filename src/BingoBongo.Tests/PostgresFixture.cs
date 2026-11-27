@@ -16,6 +16,8 @@ public static class PostgresFixture
     [ModuleInitializer]
     public static void Start()
     {
+        // Unit-only runs (mutation testing) never touch the database; skip the container.
+        if (Environment.GetEnvironmentVariable("BINGO_SKIP_DB") == "1") return;
         var container = new PostgreSqlBuilder("postgres:17-alpine").Build();
         container.StartAsync().GetAwaiter().GetResult();
         ConnectionString = container.GetConnectionString();

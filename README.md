@@ -1,5 +1,32 @@
 # BingoApp
-## Run with Docker Compose
+
+A bingo caller (ASP.NET Core API + static UI) with live read-only viewing for players.
+
+## Run locally
+
+```sh
+cd src/UI
+npm install
+npm run db      # Postgres 17 in Docker on localhost:55432 (container bingo-dev-db)
+npm run api     # ASP.NET API (migrations run on startup)
+npm run serve   # static UI on http://localhost:8080
+```
+
+## How live viewing works
+
+1. The caller opens the UI; the invite card shows a QR code carrying a join code.
+2. A player scans the QR code, which opens the viewer page (`watch.html`) with the join code.
+3. The page registers the player (`POST /api/viewers?join=...`) and gets a personal viewer link
+   (`watch.html?v=<viewerId>`). Reloading or reopening that link resumes watching.
+4. The viewer receives the board, drawn balls and history over server-sent events and cannot draw,
+   reset or control auto pilot. The caller sees a live viewer count.
+
+## Auto pilot
+
+The caller's "Auto pilot" button draws balls on a timer so you can run a game hands-free. It can be
+toggled off at any time; viewers see each draw as it happens.
+
+## Run with Docker Compose (includes Postgres)
 
 ```sh
 cd src
@@ -19,3 +46,28 @@ credentials are missing or the password is shorter than 8 characters, so the tun
 
 Tests against the running stack: `cd src/UI && npm run test:docker` (set `UI_PORT` if you changed it).
 The ngrok tests run once the tunnel is up, using `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` from the environment.
+
+### Before you expose the tunnel
+
+With the ngrok tunnel up, run `npm run test:docker` once (from `src/UI`). It confirms the viewer paths
+open without basic auth and that `/api/watch/..%2fGetGameKey` returns 401.
+
+### Migrations with several replicas
+
+The API applies EF Core migrations on startup. If you run more than one API replica, run migrations as
+a separate step (for example `dotnet ef database update` from `src/BingoBongo`) before starting the replicas.
+
+## Tests
+
+| What | Command |
+|------|---------|
+| .NET unit + integration (needs Docker for a Postgres Testcontainer) | `cd src && DOTNET_ROLL_FORWARD=Major dotnet test` |
+| .NET coverage gate (90% line and branch) | `cd src && dotnet test /p:CollectCoverage=true /p:Threshold=90 /p:ThresholdType=line%2cbranch /p:ExcludeByFile="**/Migrations/*.cs%2c**/WeatherForecast.cs"` |
+| .NET mutation testing (unit tests only, score must stay at 80 or more) | `cd src && dotnet tool restore && cd BingoBongo.Tests && BINGO_SKIP_DB=1 DOTNET_ROLL_FORWARD=Major dotnet stryker` |
+| UI unit tests + 90% coverage | `cd src/UI && npm run test:coverage` |
+| UI mutation testing | `npm run test:mutation` |
+| Playwright e2e (mocked API) | `npm run test:e2e` |
+| Playwright against the real API (starts on port 5001) | `npm run test:integration` |
+| Playwright against the Docker stack | `docker compose up -d --build` then `npm run test:docker` |
+
+`BINGO_SKIP_DB=1` stops the test run from starting the Postgres container, which unit-only mutation runs do not need.
