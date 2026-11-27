@@ -17,6 +17,7 @@ public class GameStore(
 {
     private readonly AutoPilotOptions _autoPilot = autoPilot.Value;
     private readonly LiveOptions _live = live.Value;
+    private TimeSpan Interval => TimeSpan.FromSeconds(_autoPilot.IntervalSeconds);
 
     public async Task<DrawResult> DrawAsync(Guid gameKey, CancellationToken ct)
     {
@@ -32,7 +33,9 @@ public class GameStore(
         }
 
         db.Draws.Add(new DrawEntity { GameId = gameKey, Seq = called.Count, Ball = ball });
-        game.UpdatedAt = clock.GetUtcNow();
+        var now = clock.GetUtcNow();
+        game.AutoPilotNextDrawAt = AutoPilotSchedule.AfterDraw(game.AutoPilotNextDrawAt, called.Count + 1, now, Interval);
+        game.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
         await NotifyAsync(gameKey, ct);
         await tx.CommitAsync(ct);
@@ -50,6 +53,20 @@ public class GameStore(
         game.Round++;
         game.AutoPilotNextDrawAt = null;
         game.UpdatedAt = clock.GetUtcNow();
+        await db.SaveChangesAsync(ct);
+        await NotifyAsync(gameKey, ct);
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task SetAutoPilotAsync(Guid gameKey, bool on, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var game = await LockGameAsync(gameKey, ct);
+        var drawCount = await db.Draws.CountAsync(d => d.GameId == gameKey, ct);
+
+        var now = clock.GetUtcNow();
+        game.AutoPilotNextDrawAt = AutoPilotSchedule.Toggle(on, drawCount, now, Interval);
+        game.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
         await NotifyAsync(gameKey, ct);
         await tx.CommitAsync(ct);

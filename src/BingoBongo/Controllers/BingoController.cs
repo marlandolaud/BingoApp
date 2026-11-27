@@ -31,6 +31,18 @@ public class BingoController : Controller
     }
     
     
+    [HttpPost("AutoPilot")]
+    public async Task<IActionResult> AutoPilot([FromQuery] Guid GameKey, [FromQuery] bool on, CancellationToken ct)
+    {
+        if (GameKey == Guid.Empty)
+        {
+            return BadRequest("GameKey is empty");
+        }
+
+        await _games.SetAutoPilotAsync(GameKey, on, ct);
+        return NoContent();
+    }
+
     [HttpGet("GetGameKey")]
     public IActionResult GetGameKey()
     {
