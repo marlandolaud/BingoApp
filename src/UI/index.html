@@ -441,9 +441,10 @@
       if (gameKey) {
         const res = await fetch(API + '/Reset?GameKey=' + encodeURIComponent(gameKey), { method: 'POST' });
         if(!res.ok) throw new Error('Reset failed');
-        // don't wait for the live stream: cancel any pending auto draw and resync now
+        // don't wait for the live stream: cancel any pending auto draw and, if the page
+        // holds a live snapshot (auto pilot / server state to resync), reload it now
         autopilot.stop();
-        loadState().catch((e) => console.warn('Could not reload the game after reset', e));
+        if (snap) loadState().catch((e) => console.warn('Could not reload the game after reset', e));
       }
       state.currentNumber = 'Push';
       state.history = [];
