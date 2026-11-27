@@ -1,4 +1,5 @@
 using BingoBongo.Data;
+using BingoBongo.Live;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -76,10 +77,67 @@ public class GameStore(
     {
         await EnsureGameAsync(gameKey, ct);
         var game = await db.Games.AsNoTracking().SingleAsync(g => g.Id == gameKey, ct);
-        var called = await CalledBallsAsync(gameKey, ct);
+        return await BuildSnapshotAsync(game, includeJoinCode: true, ct);
+    }
+
+    /// <summary>A new viewer for the game with this public join code, or null if there is none.</summary>
+    public async Task<Guid?> JoinAsync(Guid joinCode, CancellationToken ct)
+    {
+        var gameId = await db.Games.AsNoTracking()
+            .Where(g => g.JoinCode == joinCode)
+            .Select(g => (Guid?)g.Id)
+            .SingleOrDefaultAsync(ct);
+        if (gameId is null)
+        {
+            return null;
+        }
+
+        var viewer = new ViewerEntity { Id = Guid.NewGuid(), GameId = gameId.Value, CreatedAt = clock.GetUtcNow() };
+        db.Viewers.Add(viewer);
+        await db.SaveChangesAsync(ct);
+        return viewer.Id;
+    }
+
+    /// <summary>
+    /// The viewer's game id (the hub key; never expose it to viewers) and the snapshot
+    /// without the join code, or null for an unknown viewer.
+    /// </summary>
+    public async Task<(Guid GameId, GameSnapshot Snapshot)?> GetViewerSnapshotAsync(Guid viewerId, CancellationToken ct)
+    {
+        var game = await GameOfViewerAsync(viewerId, ct);
+        if (game is null)
+        {
+            return null;
+        }
+        return (game.Id, await BuildSnapshotAsync(game, includeJoinCode: false, ct));
+    }
+
+    public async Task UpdatePresenceAsync(Guid viewerId, SsePresence presence, CancellationToken ct)
+    {
+        DateTimeOffset? seen = presence == SsePresence.Disconnected ? null : clock.GetUtcNow();
+        var updated = await db.Viewers.Where(v => v.Id == viewerId)
+            .ExecuteUpdateAsync(s => s.SetProperty(v => v.LastSeenAt, seen), ct);
+        if (updated == 0 || presence == SsePresence.Heartbeat)
+        {
+            return;
+        }
+
+        var gameId = await db.Viewers.AsNoTracking().Where(v => v.Id == viewerId).Select(v => v.GameId).SingleAsync(ct);
+        await NotifyAsync(gameId, ct);
+    }
+
+    private Task<GameEntity?> GameOfViewerAsync(Guid viewerId, CancellationToken ct) =>
+        db.Viewers.AsNoTracking()
+            .Where(v => v.Id == viewerId)
+            .Select(v => db.Games.First(g => g.Id == v.GameId))
+            .SingleOrDefaultAsync(ct);
+
+    private async Task<GameSnapshot> BuildSnapshotAsync(GameEntity game, bool includeJoinCode, CancellationToken ct)
+    {
+        var called = await CalledBallsAsync(game.Id, ct);
         var now = clock.GetUtcNow();
         var seenSince = now - TimeSpan.FromSeconds(2 * _live.HeartbeatSeconds);
-        var viewerCount = await db.Viewers.CountAsync(v => v.GameId == gameKey && v.LastSeenAt > seenSince, ct);
+        var viewerCount = await db.Viewers.CountAsync(v => v.GameId == game.Id && v.LastSeenAt > seenSince, ct);
 
         return new GameSnapshot(
             game.Round,
@@ -89,7 +147,7 @@ public class GameStore(
             new AutoPilotState(game.AutoPilotNextDrawAt != null, game.AutoPilotNextDrawAt),
             now,
             viewerCount,
-            game.JoinCode);
+            includeJoinCode ? game.JoinCode : null);
     }
 
     /// <summary>Creates the game row if missing, then locks it. Must run inside a transaction.</summary>
