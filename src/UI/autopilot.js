@@ -7,6 +7,7 @@
     let timer;
     let scheduledFor = null;
     let inFlight = false;
+    let handledFor = null; // nextDrawAt of the draw in flight or last successfully drawn
 
     function cancel() {
       if (scheduled) clearTimer(timer);
@@ -16,17 +17,24 @@
 
     function fire() {
       // The timer is spent; the next sync must schedule afresh.
+      const target = scheduledFor;
       scheduled = false;
       scheduledFor = null;
       if (inFlight) return;
       inFlight = true;
+      handledFor = target;
       const release = () => { inFlight = false; };
-      new Promise(resolve => resolve(draw())).then(release, (err) => { release(); report(err); });
+      new Promise(resolve => resolve(draw())).then(release, (err) => {
+        release();
+        handledFor = null; // a failed draw may be retried by the next sync
+        try { report(err); } catch (_) { /* a failing reporter must not escape */ }
+      });
     }
 
     function sync(snapshot, offsetMs) {
       const pilot = snapshot.autoPilot;
       if (!pilot || !pilot.on || Number.isNaN(Date.parse(pilot.nextDrawAt))) { cancel(); return; }
+      if (pilot.nextDrawAt === handledFor) return; // stale snapshot of a draw already made
       if (scheduled && scheduledFor === pilot.nextDrawAt) return;
       cancel();
       const delay = Math.max(0, Date.parse(pilot.nextDrawAt) - (now() + offsetMs));

@@ -213,3 +213,41 @@ test('a snapshot without autoPilot is treated as off', () => {
   assert.deepEqual(cleared, [0]);
   assert.equal(timers.length, 1);
 });
+
+test('stale snapshot after a successful draw does not draw again', async () => {
+  const { ap, timers, draws } = setup();
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  ap.sync(on(0), 0);
+  assert.equal(timers.length, 1);
+  assert.equal(draws.n, 1);
+});
+test('stale snapshot while the draw is in flight does not schedule', () => {
+  const { ap, timers } = setup(() => new Promise(() => {}));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  ap.sync(on(0), 0);
+  assert.equal(timers.length, 1);
+});
+test('new nextDrawAt after a successful draw schedules', async () => {
+  const { ap, timers } = setup();
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  ap.sync(on(5000), 0);
+  assert.equal(timers.length, 2);
+  assert.equal(timers[1].ms, 5000);
+});
+test('an onError that throws does not cause an unhandled rejection', async () => {
+  const unhandled = [];
+  const h = (e) => unhandled.push(e);
+  process.on('unhandledRejection', h);
+  try {
+    const { ap, timers } = setup(() => Promise.reject(new Error('a')), () => { throw new Error('b'); });
+    ap.sync(on(0), 0);
+    timers[0].fn();
+    await tick(); await tick();
+    assert.deepEqual(unhandled, []);
+  } finally { process.off('unhandledRejection', h); }
+});
