@@ -1,5 +1,8 @@
 using System.Net;
 using System.Text.Json;
+using BingoBongo.Games;
+using BingoBongo.Live;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace BingoBongo.Tests;
@@ -154,6 +157,68 @@ public class ViewerTests
 
         Assert.Equal(1, fresh.GetProperty("viewerCount").GetInt32());
         Assert.Equal(0, stale.GetProperty("viewerCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Viewer_stays_counted_across_heartbeats()
+    {
+        var key = Guid.NewGuid();
+        using var f = new BingoApiFactory();
+        var client = f.CreateClient();
+        var viewer = await JoinAsync(client, await JoinCodeOf(client, key));
+        using var cts = new CancellationTokenSource(Timeout);
+        using var response = await SseClient.OpenAsync(client, $"/watch/{viewer}/events", cts.Token);
+        await using var frames = SseClient.ReadStatesAsync(response, cts.Token).GetAsyncEnumerator(cts.Token);
+        await frames.MoveNextAsync();
+
+        // Longer than 2 x heartbeat: only Heartbeat refreshing LastSeenAt keeps the viewer counted.
+        await Task.Delay(TimeSpan.FromSeconds(3.5), cts.Token);
+
+        var state = await SseClient.GetJsonAsync(client, $"/State?GameKey={key}");
+        Assert.Equal(1, state.GetProperty("viewerCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Heartbeat_refreshes_last_seen_without_notifying_but_connect_does()
+    {
+        var key = Guid.NewGuid();
+        using var f = new BingoApiFactory();
+        var client = f.CreateClient();
+        var viewer = await JoinAsync(client, await JoinCodeOf(client, key));
+        using var cts = new CancellationTokenSource(Timeout);
+
+        var notified = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        await using var listen = new NpgsqlConnection(PostgresFixture.ConnectionString);
+        await listen.OpenAsync(cts.Token);
+        listen.Notification += (_, e) => { if (e.Payload == key.ToString()) notified.Enqueue(e.Payload); };
+        await using (var cmd = new NpgsqlCommand("LISTEN game_events", listen))
+        {
+            await cmd.ExecuteNonQueryAsync(cts.Token);
+        }
+        var waiting = Task.Run(async () =>
+        {
+            while (!cts.IsCancellationRequested) await listen.WaitAsync(cts.Token);
+        }, cts.Token);
+
+        await using (var scope = f.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<GameStore>()
+                .UpdatePresenceAsync(viewer, SsePresence.Heartbeat, cts.Token);
+        }
+        await Task.Delay(1000, cts.Token);
+
+        Assert.Empty(notified);
+        var state = await SseClient.GetJsonAsync(client, $"/State?GameKey={key}");
+        Assert.Equal(1, state.GetProperty("viewerCount").GetInt32());
+
+        await using (var scope = f.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<GameStore>()
+                .UpdatePresenceAsync(viewer, SsePresence.Connected, cts.Token);
+        }
+        while (notified.IsEmpty) await Task.Delay(20, cts.Token);
+        await cts.CancelAsync();
+        await Task.WhenAny(waiting);
     }
 
     private static async Task SetLastSeen(Guid viewer, DateTimeOffset at)
