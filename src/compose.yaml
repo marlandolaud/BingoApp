@@ -1,11 +1,31 @@
 # docker compose up --build   -> UI on http://localhost:${UI_PORT:-8080}, public via ngrok
 # Copy .env.example to .env first (ngrok token + basic auth credentials).
 services:
+  # Migrations run on API startup; with several API replicas, run them as a separate step instead.
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bingo}
+      POSTGRES_DB: bingo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bingo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   api:
     image: bingobongo
     build:
       context: .
       dockerfile: BingoBongo/Dockerfile
+    environment:
+      ConnectionStrings__Bingo: Host=db;Database=bingo;Username=postgres;Password=${POSTGRES_PASSWORD:-bingo}
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     # not published: only reachable through the ui proxy
 
@@ -34,3 +54,6 @@ services:
     ports:
       - "127.0.0.1:${NGROK_INSPECT_PORT:-4040}:4040"   # local inspector, shows the public URL
     restart: on-failure:3
+
+volumes:
+  pgdata:

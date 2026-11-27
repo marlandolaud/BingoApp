@@ -9,6 +9,7 @@
     "test:mutation": "stryker run",
     "serve": "http-server -a 0.0.0.0 -p 8080 -c-1 .",
     "api": "DOTNET_ROLL_FORWARD=Major dotnet run --project ../BingoBongo/BingoBongo.csproj --launch-profile lan",
+    "db": "docker run -d --name bingo-dev-db -p 55432:5432 -e POSTGRES_PASSWORD=bingo -e POSTGRES_DB=bingo postgres:17-alpine || docker start bingo-dev-db",
     "test:docker": "DOCKER=1 playwright test --project=docker",
     "test:lan": "LAN=1 playwright test --project=integration lan.spec.js"
   },
