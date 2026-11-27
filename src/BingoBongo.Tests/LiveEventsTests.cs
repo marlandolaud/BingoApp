@@ -1,5 +1,8 @@
 using System.Text;
 using System.Text.Json;
+using BingoBongo.Live;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 
 namespace BingoBongo.Tests;
@@ -43,8 +46,7 @@ public class LiveEventsTests
 
         var draw = await GetJson(client, $"/Get?GameKey={key}");
 
-        var next = await Next(frames);
-        Assert.Equal(1, next.GetProperty("numberOfDrew").GetInt32());
+        var next = await NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
         Assert.Equal(draw.GetProperty("currentNumber").GetString(), next.GetProperty("currentNumber").GetString());
     }
 
@@ -98,12 +100,26 @@ public class LiveEventsTests
         await using var frames = SseClient.ReadStatesAsync(client, $"/Events?GameKey={key}", cts.Token).GetAsyncEnumerator(cts.Token);
         await Next(frames);
 
+        // Kill only this factory's listener, so parallel test classes are unaffected.
+        var listener = f.Services.GetServices<IHostedService>().OfType<PgNotificationListener>().Single();
         await using (var admin = new NpgsqlConnection(PostgresFixture.ConnectionString))
         {
             await admin.OpenAsync();
-            await using var kill = new NpgsqlCommand(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query = 'LISTEN game_events'", admin);
-            Assert.NotNull(await kill.ExecuteScalarAsync());
+            const string sql = """
+                SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
+                WHERE application_name = @name AND query = 'LISTEN game_events'
+                """;
+            long killed = 0;
+            // The listener connects in the background; retry until its LISTEN backend exists.
+            while (killed == 0)
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                await using var kill = new NpgsqlCommand(sql, admin);
+                kill.Parameters.AddWithValue("name", listener.ApplicationName);
+                killed = (long)(await kill.ExecuteScalarAsync(cts.Token))!;
+                if (killed == 0) await Task.Delay(50, cts.Token);
+            }
+            Assert.Equal(1, killed);
         }
         // The draw may land before or after LISTEN is re-established; the reconnect's
         // PublishAll covers the first case and the notification the second.

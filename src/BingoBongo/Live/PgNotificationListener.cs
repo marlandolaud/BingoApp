@@ -14,9 +14,15 @@ public class PgNotificationListener(
     public const string Channel = "game_events";
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
 
+    /// <summary>Unique per instance, so this listener's backend is identifiable in pg_stat_activity.</summary>
+    public string ApplicationName { get; } = $"bingo-listener-{Guid.NewGuid():N}";
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var connectionString = configuration.GetConnectionString("Bingo");
+        var connectionString = new NpgsqlConnectionStringBuilder(configuration.GetConnectionString("Bingo"))
+        {
+            ApplicationName = ApplicationName,
+        }.ConnectionString;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
