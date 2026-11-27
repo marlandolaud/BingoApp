@@ -195,53 +195,10 @@
 
   const boardBody = document.getElementById('boardBody');
 
-  function renderBoard(){
-    boardBody.innerHTML = '';
-    for (const row of BingoBoard.buildBoard(state.history)) {
-      const tr = document.createElement('tr');
-      tr.dataset.letter = row.letter;
-      const th = document.createElement('th');
-      th.scope = 'row';
-      const letter = document.createElement('span');
-      letter.className = 'letter';
-      letter.textContent = row.letter;
-      th.appendChild(letter);
-      const count = document.createElement('span');
-      count.className = 'count';
-      count.textContent = row.calledCount;
-      th.appendChild(count);
-      tr.appendChild(th);
-      for (const c of row.numbers) {
-        const td = document.createElement('td');
-        td.className = 'cell' + (c.called ? ' called' : '') + (c.last ? ' last' : '');
-        td.textContent = c.number;
-        td.setAttribute('aria-label', row.letter + c.number + (c.called ? ' called' : ''));
-        tr.appendChild(td);
-      }
-      boardBody.appendChild(tr);
-    }
-  }
-
   function render(){
-    renderBoard();
+    BingoBoard.renderBoard(boardBody, state.history);
     elCurrent.textContent = state.currentNumber ?? '--';
-
-    // clear & render track
-    track.innerHTML = '';
-
-    for (const [key, value] of Object.entries(state.history)) {
-    console.log(`>>>>> ${key}: ${value}`);
-        const d = document.createElement('div');
-        d.className = 'dot small';
-        d.textContent = value;
-        track.appendChild(d);
-    }
-
-    requestAnimationFrame(()=> {
-      if (historyContainer.scrollWidth > historyContainer.clientWidth) {
-        historyContainer.scrollTo({ left: historyContainer.scrollWidth, behavior: 'smooth' });
-      }
-    });
+    BingoBoard.renderTrack(track, historyContainer, state.history);
   }
 
   function pushNumber(n){

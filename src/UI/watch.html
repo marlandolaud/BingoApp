@@ -155,54 +155,17 @@
   const statusEl = document.getElementById('status');
   const notFoundEl = document.getElementById('notFound');
   const WAITING = 'Waiting for dealer…';
+  const RECONNECT_MS = 3000;
 
   let snap = null;
   let offsetMs = 0;
   let events = null;
   let connection = 'Connecting…';
 
-  function renderBoard(history) {
-    boardBody.replaceChildren();
-    for (const row of BingoBoard.buildBoard(history)) {
-      const tr = document.createElement('tr');
-      tr.dataset.letter = row.letter;
-      const th = document.createElement('th');
-      th.scope = 'row';
-      const letter = document.createElement('span');
-      letter.className = 'letter';
-      letter.textContent = row.letter;
-      th.appendChild(letter);
-      const count = document.createElement('span');
-      count.className = 'count';
-      count.textContent = row.calledCount;
-      th.appendChild(count);
-      tr.appendChild(th);
-      for (const c of row.numbers) {
-        const td = document.createElement('td');
-        td.className = 'cell' + (c.called ? ' called' : '') + (c.last ? ' last' : '');
-        td.textContent = c.number;
-        td.setAttribute('aria-label', row.letter + c.number + (c.called ? ' called' : ''));
-        tr.appendChild(td);
-      }
-      boardBody.appendChild(tr);
-    }
-  }
-
   function render(view) {
-    renderBoard(view.history);
+    BingoBoard.renderBoard(boardBody, view.history);
     elCurrent.textContent = view.currentNumber;
-    track.replaceChildren();
-    for (const value of view.history) {
-      const d = document.createElement('div');
-      d.className = 'dot small';
-      d.textContent = value;
-      track.appendChild(d);
-    }
-    requestAnimationFrame(() => {
-      if (historyContainer.scrollWidth > historyContainer.clientWidth) {
-        historyContainer.scrollTo({ left: historyContainer.scrollWidth, behavior: 'smooth' });
-      }
-    });
+    BingoBoard.renderTrack(track, historyContainer, view.history);
   }
 
   function renderCountdown() {
@@ -239,7 +202,14 @@
       catch (err) { console.warn('Ignoring bad live update', err); }
     });
     events.addEventListener('error', () => {
-      if (events.readyState !== EventSource.OPEN) setConnection(BingoLive.statusText(events.readyState));
+      if (events.readyState === EventSource.OPEN) return;
+      setConnection(BingoLive.statusText(events.readyState));
+      if (events.readyState === EventSource.CLOSED) {
+        // the browser gave up (non-200 response): recheck the game, then reopen
+        events.close();
+        events = null;
+        setTimeout(() => watch(viewerId), RECONNECT_MS);
+      }
     });
   }
 

@@ -119,7 +119,37 @@ test('reconnecting then live', async ({ page }) => {
   expect(seen.indexOf('Reconnecting…')).toBeLessThan(seen.indexOf('Live'));
 });
 
-test('viewer never calls dealer endpoints', async ({ page }) => {
+test('a closed stream is reopened after a bad response', async ({ page }) => {
+  let calls = 0;
+  const snap = snapshot({ currentNumber: 'B5', history: { 0: 'B5' } });
+  await mockApi(page, snap, {
+    eventsHandler: r => (++calls === 1 ? r.fulfill({ status: 502, body: '' }) : r.fulfill(sse(snap))),
+  });
+  await recordStatuses(page);
+  await page.goto('/watch.html?v=' + V);
+  await sawStatus(page, 'Reconnecting…');
+  await expect.poll(() => page.evaluate(() => window.__statuses), { timeout: 10000 }).toContain('Live');
+  expect(calls).toBe(2);
+  await expect(page.locator('#currentNumber')).toHaveText('B5');
+  await expect(page.locator('#boardBody td.called')).toHaveCount(1);
+});
+
+test('a viewer that disappears mid-session shows game not found', async ({ page }) => {
+  let stateCalls = 0;
+  const snap = snapshot();
+  await page.route(`${API}/**`, r => {
+    const path = new URL(r.request().url()).pathname;
+    if (path === `/watch/${V}/state`) {
+      return ++stateCalls === 1 ? r.fulfill({ json: snap }) : r.fulfill({ status: 404, body: '' });
+    }
+    return r.fulfill({ status: 404, body: '' });
+  });
+  await page.goto('/watch.html?v=' + V);
+  await expect(page.locator('#notFound')).toBeVisible({ timeout: 10000 });
+  expect(stateCalls).toBe(2);
+});
+
+test('viewer only calls viewer endpoints', async ({ page }) => {
   const requests = await mockApi(page, snapshot({ currentNumber: 'B5', history: { 0: 'B5' } }));
   await page.goto('/watch.html?join=' + JOIN);
   await expect(page.locator('#currentNumber')).toHaveText('B5');
@@ -127,5 +157,6 @@ test('viewer never calls dealer endpoints', async ({ page }) => {
   await page.keyboard.press('Enter');
   await page.keyboard.press('Escape');
   expect(requests.length).toBeGreaterThan(0);
-  expect(requests.filter(r => /Get|Reset|AutoPilot|GetGameKey|\/State|\/Events/.test(r.path))).toEqual([]);
+  const allowed = /^\/(viewers|watch\/[0-9a-f-]{36}\/(state|events))$/;
+  expect(requests.filter(r => !allowed.test(r.path))).toEqual([]);
 });
