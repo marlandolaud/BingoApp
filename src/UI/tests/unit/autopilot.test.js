@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const AP = require('../../autopilot.js');
 
 const T0 = 1_000_000;
-function setup(drawImpl) {
+function setup(drawImpl, onError) {
   const timers = [];
   const cleared = [];
   const draws = { n: 0 };
@@ -12,6 +12,7 @@ function setup(drawImpl) {
     now: () => T0,
     setTimer: (fn, ms) => { const t = { fn, ms, id: timers.length }; timers.push(t); return t.id; },
     clearTimer: (id) => cleared.push(id),
+    ...(onError ? { onError } : {}),
   });
   return { ap, timers, cleared, draws };
 }
@@ -129,4 +130,86 @@ test('repeated off does not clear an already cleared timer', () => {
   ap.sync(off, 0);
   ap.stop();
   assert.deepEqual(cleared, [0]);
+});
+
+const tick = () => new Promise(r => setImmediate(r));
+
+test('after a rejected draw the next sync of the same snapshot schedules a new timer', async () => {
+  const { ap, timers } = setup(() => Promise.reject(new Error('boom')), () => {});
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  assert.equal(timers.length, 1);
+  ap.sync(on(0), 0);
+  assert.equal(timers.length, 2);
+});
+test('a fired timer is consumed so it is not cleared later', () => {
+  const { ap, timers, cleared } = setup();
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  ap.stop();
+  ap.sync(off, 0);
+  assert.deepEqual(cleared, []);
+});
+test('timer firing while a draw is in flight is consumed and the next sync reschedules', async () => {
+  let resolve;
+  const { ap, timers, draws } = setup(() => new Promise(r => { resolve = r; }));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  ap.sync(on(1000), 0);
+  timers[1].fn();
+  assert.equal(draws.n, 1);
+  ap.sync(on(1000), 0);
+  assert.equal(timers.length, 3);
+  resolve();
+  await tick();
+  timers[2].fn();
+  assert.equal(draws.n, 2);
+});
+test('draw rejection is reported to onError', async () => {
+  const err = new Error('boom');
+  const seen = [];
+  const { ap, timers } = setup(() => Promise.reject(err), (e) => seen.push(e));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  assert.deepEqual(seen, [err]);
+});
+test('a successful draw does not call onError', async () => {
+  const seen = [];
+  const { ap, timers } = setup(() => Promise.resolve(), (e) => seen.push(e));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  assert.deepEqual(seen, []);
+});
+test('onError defaults to console.warn', async () => {
+  const orig = console.warn;
+  const seen = [];
+  console.warn = (...a) => seen.push(a);
+  try {
+    const err = new Error('boom');
+    const { ap, timers } = setup(() => Promise.reject(err));
+    ap.sync(on(0), 0);
+    timers[0].fn();
+    await tick();
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0][1], err);
+  } finally { console.warn = orig; }
+});
+test('on with null or unparseable nextDrawAt is treated as off', () => {
+  const { ap, timers, cleared } = setup();
+  ap.sync(on(3000), 0);
+  ap.sync({ autoPilot: { on: true, nextDrawAt: null } }, 0);
+  assert.deepEqual(cleared, [0]);
+  ap.sync({ autoPilot: { on: true, nextDrawAt: 'garbage' } }, 0);
+  assert.equal(timers.length, 1);
+  assert.deepEqual(cleared, [0]);
+});
+test('a snapshot without autoPilot is treated as off', () => {
+  const { ap, timers, cleared } = setup();
+  ap.sync(on(3000), 0);
+  ap.sync({}, 0);
+  assert.deepEqual(cleared, [0]);
+  assert.equal(timers.length, 1);
 });
