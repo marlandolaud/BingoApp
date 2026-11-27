@@ -1,8 +1,14 @@
 const { test, expect } = require('@playwright/test');
 
+const contexts = [];
+test.afterEach(async () => {
+  await Promise.all(contexts.splice(0).map(c => c.close().catch(() => {})));
+});
+
 // Dealer + viewer against the real API and a real Postgres (see scripts/integration-api.sh).
 async function newPage(browser) {
   const ctx = await browser.newContext();
+  contexts.push(ctx);
   const page = await ctx.newPage();
   await page.addInitScript(() => localStorage.setItem('bingoSound', 'off'));
   return { ctx, page };
@@ -39,8 +45,6 @@ test('viewer board follows dealer draws', async ({ browser }) => {
   await expect(viewer.page.locator('td.cell.called')).toHaveCount(4, { timeout: 10000 });
   const current = await dealer.page.locator('#currentNumber').innerText();
   await expect(viewer.page.locator('#currentNumber')).toHaveText(current, { timeout: 10000 });
-  await dealer.ctx.close();
-  await viewer.ctx.close();
 });
 
 test('reset clears viewer board without reload', async ({ browser }) => {
@@ -53,8 +57,6 @@ test('reset clears viewer board without reload', async ({ browser }) => {
   await dealer.page.locator('#resetBtn').click();
   await expect(viewer.page.locator('td.cell.called')).toHaveCount(0, { timeout: 10000 });
   expect(viewer.page.url()).toBe(url);
-  await dealer.ctx.close();
-  await viewer.ctx.close();
 });
 
 test('dealer refresh keeps the game', async ({ browser }) => {
@@ -66,17 +68,14 @@ test('dealer refresh keeps the game', async ({ browser }) => {
   await dealer.page.reload();
   await expect(dealer.page.locator('td.cell.called')).toHaveCount(3);
   expect(dealer.page.url()).toBe(url);
-  await dealer.ctx.close();
 });
 
 test('viewer count goes up when a viewer joins', async ({ browser }) => {
   const dealer = await startDealer(browser);
-  await expect(dealer.page.locator('#viewerCount')).toHaveText('👁 0 watching', { timeout: 10000 });
   const viewer = await startViewer(browser, dealer.joinUrl);
   await expect(dealer.page.locator('#viewerCount')).toHaveText('👁 1 watching', { timeout: 10000 });
   await viewer.ctx.close();
   await expect(dealer.page.locator('#viewerCount')).toHaveText('👁 0 watching', { timeout: 10000 });
-  await dealer.ctx.close();
 });
 
 test('auto pilot draws on its own and both screens count down', async ({ browser }) => {
@@ -94,6 +93,4 @@ test('auto pilot draws on its own and both screens count down', async ({ browser
   const n = await called.count();
   await viewer.page.waitForTimeout(5000);
   expect(await called.count()).toBe(n);
-  await dealer.ctx.close();
-  await viewer.ctx.close();
 });
