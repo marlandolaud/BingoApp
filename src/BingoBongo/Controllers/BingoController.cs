@@ -1,4 +1,5 @@
 using System.Text;
+using BingoBongo.Games;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -9,7 +10,6 @@ public class BingoController : Controller
 {
     private readonly IMemoryCache _memoryCache;
     private readonly ILogger<BingoController> _logger;
-    private static readonly string[] Letters = ["B", "I", "N", "G", "O"];
     private readonly Random _rand = Random.Shared;
 
     public BingoController(IMemoryCache memoryCache, ILogger<BingoController> logger)
@@ -58,23 +58,7 @@ public class BingoController : Controller
             return Ok("Game Over!");
         }
 
-        // Balanced draw: pick among the letters called least so far (that still
-        // have numbers left), then a random uncalled number within that letter.
-        // Keeps every letter within one call of the others.
-        var called = myBingoHistory.Values.ToHashSet();
-        var remainingByLetter = Letters
-            .Select((letter, i) => (
-                Letter: letter,
-                Remaining: Enumerable.Range(i * 15 + 1, 15)
-                    .Select(n => $"{letter}{n}")
-                    .Where(ball => !called.Contains(ball))
-                    .ToList()))
-            .Where(x => x.Remaining.Count > 0)
-            .ToList();
-        var mostRemaining = remainingByLetter.Max(x => x.Remaining.Count);
-        var candidates = remainingByLetter.Where(x => x.Remaining.Count == mostRemaining).ToList();
-        var chosen = candidates[_rand.Next(candidates.Count)];
-        var bingoSelection = chosen.Remaining[_rand.Next(chosen.Remaining.Count)];
+        var bingoSelection = BallPicker.Next(myBingoHistory.Values.ToHashSet(), _rand)!;
         _logger.LogInformation("bingoSelection:{bingoSelection}", bingoSelection);
         
         myBingoHistory.Add(myBingoHistory.Count, bingoSelection);
