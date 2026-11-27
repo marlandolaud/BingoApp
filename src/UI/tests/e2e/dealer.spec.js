@@ -30,6 +30,7 @@ async function mockApi(page, state) {
       }
       case '/State': return r.fulfill({ json: state.snap });
       case '/AutoPilot': return r.fulfill({ status: 204, body: '' });
+      case '/Reset': return r.fulfill({ status: 200, body: '' });
       case '/Events': return r.fulfill({
         status: 200,
         headers: { 'content-type': 'text/event-stream' },
@@ -162,4 +163,68 @@ test('auto pilot toggles and counts down', async ({ page }) => {
   expect(hits(requests, '/AutoPilot')[1].search).toBe('?GameKey=' + KEY + '&on=false');
   await expect(page.locator('#countdown')).toHaveText('');
   expect(hits(requests, '/Get')).toHaveLength(1);
+});
+
+test('reset stops auto pilot even when no live update arrives', async ({ page }) => {
+  await page.clock.install({ time: T0 });
+  const state = { snap: snapshot({ autoPilot: { on: true, nextDrawAt: new Date(T0 + 10_000).toISOString() } }) };
+  const requests = await mockApi(page, state);
+  // the event stream delivers the initial frame once, then stays silent
+  const firstFrame = 'event: state\ndata: ' + JSON.stringify(state.snap) + '\n\n';
+  let served = false;
+  await page.route(`${API}/Events?*`, r => {
+    if (served) return r.abort();
+    served = true;
+    return r.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: firstFrame });
+  });
+  await page.goto('/?game=' + KEY);
+  const btn = page.locator('#autoPilotBtn');
+  await expect(btn).toHaveText('■ Stop');
+  await expect(page.locator('#countdown')).toHaveText('Next ball in 10s');
+
+  state.snap = snapshot();
+  page.once('dialog', d => d.accept());
+  await page.getByRole('button', { name: /Reset game/ }).click();
+  await expect(btn).toHaveText('▶ Auto pilot');
+  await expect(page.locator('#countdown')).toHaveText('');
+  await page.clock.runFor(15_000);
+  expect(hits(requests, '/Reset')).toHaveLength(1);
+  expect(hits(requests, '/Get')).toHaveLength(0);
+});
+
+test('two quick first draws share one game key', async ({ page }) => {
+  const requests = await mockApi(page, { snap: snapshot() });
+  const keys = [KEY, '44444444-4444-4444-4444-444444444444'];
+  let n = 0;
+  await page.route(`${API}/GetGameKey`, async r => {
+    requests.push({ method: 'GET', path: '/GetGameKey', search: '' });
+    const key = keys[n++];
+    await new Promise(res => setTimeout(res, 300));
+    return r.fulfill({ json: key });
+  });
+  await page.goto('/');
+  await page.locator('#currentNumber').click();
+  await page.locator('#currentNumber').click();
+  await expect.poll(() => hits(requests, '/Get').length).toBe(2);
+  expect(hits(requests, '/GetGameKey')).toHaveLength(1);
+  await expect(page).toHaveURL(new RegExp('\\?game=' + KEY + '$'));
+  await expect.poll(() => hits(requests, '/Events').length).toBeGreaterThan(0);
+  expect(hits(requests, '/Events').every(r => r.search === '?GameKey=' + KEY)).toBe(true);
+  expect(hits(requests, '/Get').every(r => r.search === '?GameKey=' + KEY)).toBe(true);
+});
+
+test('drawing at game over keeps the board', async ({ page }) => {
+  await mockApi(page, {
+    snap: snapshot({ numberOfDrew: 3, currentNumber: 'G50', history: { 0: 'B7', 1: 'N31', 2: 'G50' } }),
+  });
+  await page.route(`${API}/Get?*`, r => r.fulfill({ json: 'Game Over!' }));
+  await page.goto('/?game=' + KEY);
+  await expect(page.locator('td.cell.called')).toHaveCount(3);
+  const dialog = page.waitForEvent('dialog', { timeout: 5000 });
+  await page.locator('#currentNumber').click();
+  const d = await dialog;
+  expect(d.message()).toBe('Game Over!');
+  await d.accept();
+  await expect(page.locator('#currentNumber')).toHaveText('G50');
+  await expect(page.locator('td.cell.called')).toHaveCount(3);
 });
