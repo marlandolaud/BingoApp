@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Bingo Live Viewer</title>
+<!-- no /favicon.ico request: it is not exempt from the tunnel's basic auth -->
+<link rel="icon" href="data:," />
 <style>
   :root{
     --bg:#0f1720;
@@ -226,15 +228,18 @@
   async function join(joinCode) {
     try {
       const res = await fetch(API + '/viewers?join=' + encodeURIComponent(joinCode), { method: 'POST' });
-      if (!res.ok) return showNotFound();
+      if (res.status === 404) return showNotFound();
+      if (!res.ok) throw new Error('Join failed: ' + res.status);
       const { viewerId } = await res.json();
       const next = new URL(location.href);
       next.searchParams.delete('join');
       history.replaceState(null, '', BingoLive.withParam(next.toString(), 'v', viewerId));
       watch(viewerId);
     } catch (e) {
+      // server or network trouble (not an unknown game): keep trying
       console.warn('Could not join the game', e);
       setConnection('Reconnecting…');
+      setTimeout(() => join(joinCode), RECONNECT_MS);
     }
   }
 

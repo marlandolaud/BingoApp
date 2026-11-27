@@ -160,3 +160,41 @@ test('viewer only calls viewer endpoints', async ({ page }) => {
   const allowed = /^\/(viewers|watch\/[0-9a-f-]{36}\/(state|events))$/;
   expect(requests.filter(r => !allowed.test(r.path))).toEqual([]);
 });
+
+test('a failed join shows reconnecting and retries instead of game not found', async ({ page }) => {
+  let joins = 0;
+  const snap = snapshot({ currentNumber: 'B5', history: { 0: 'B5' } });
+  await mockApi(page, snap);
+  await page.route(`${API}/viewers?*`, r => (++joins === 1
+    ? r.fulfill({ status: 503, body: '' })
+    : r.fulfill({ json: { viewerId: V } })));
+  await recordStatuses(page);
+  await page.goto('/watch.html?join=' + JOIN);
+  await sawStatus(page, 'Reconnecting…');
+  await expect(page.locator('#notFound')).toBeHidden();
+  await expect(page).toHaveURL(new RegExp('watch\\.html\\?v=' + V + '$'), { timeout: 10000 });
+  expect(joins).toBe(2);
+  await expect(page.locator('#currentNumber')).toHaveText('B5');
+});
+
+test('a join that cannot reach the server retries', async ({ page }) => {
+  let joins = 0;
+  await mockApi(page, snapshot());
+  await page.route(`${API}/viewers?*`, r => (++joins === 1 ? r.abort() : r.fulfill({ json: { viewerId: V } })));
+  await recordStatuses(page);
+  await page.goto('/watch.html?join=' + JOIN);
+  await sawStatus(page, 'Reconnecting…');
+  await expect(page).toHaveURL(new RegExp('watch\\.html\\?v=' + V + '$'), { timeout: 10000 });
+  expect(joins).toBe(2);
+});
+
+test('the viewer page does not request a favicon', async ({ page }) => {
+  const favicons = [];
+  page.on('request', r => { if (/favicon/.test(r.url())) favicons.push(r.url()); });
+  await mockApi(page, snapshot());
+  await page.goto('/watch.html?v=' + V);
+  await expect(page.locator('#currentNumber')).toHaveText('--');
+  await page.waitForLoadState('networkidle');
+  expect(favicons).toEqual([]);
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', 'data:,');
+});

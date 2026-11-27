@@ -251,3 +251,114 @@ test('an onError that throws does not cause an unhandled rejection', async () =>
     assert.deepEqual(unhandled, []);
   } finally { process.off('unhandledRejection', h); }
 });
+
+// ---- the draw names its target; a failed draw resyncs so auto pilot retries ----
+function setupRetry(drawImpl, resyncImpl) {
+  const timers = [];
+  const cleared = [];
+  const targets = [];
+  const resyncs = { n: 0 };
+  const errors = [];
+  const ap = AP.create({
+    draw: (target) => { targets.push(target); return drawImpl ? drawImpl() : Promise.resolve(); },
+    now: () => T0,
+    setTimer: (fn, ms) => { const t = { fn, ms, id: timers.length }; timers.push(t); return t.id; },
+    clearTimer: (id) => cleared.push(id),
+    onError: (e) => errors.push(e),
+    resync: () => { resyncs.n++; return resyncImpl ? resyncImpl() : Promise.resolve(); },
+  });
+  return { ap, timers, cleared, targets, resyncs, errors };
+}
+
+test('the draw is given the nextDrawAt it was scheduled for', () => {
+  const { ap, timers, targets } = setupRetry();
+  ap.sync(on(3000), 0);
+  timers[0].fn();
+  assert.deepEqual(targets, [new Date(T0 + 3000).toISOString()]);
+});
+test('a failed draw schedules a resync after the retry delay', async () => {
+  const { ap, timers, resyncs } = setupRetry(() => Promise.reject(new Error('502')));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  assert.equal(timers.length, 2);
+  assert.equal(timers[1].ms, 2000);
+  assert.equal(resyncs.n, 0);
+  timers[1].fn();
+  assert.equal(resyncs.n, 1);
+});
+test('the resync snapshot retries the same draw target', async () => {
+  let fail = true;
+  const { ap, timers, targets } = setupRetry(() => (fail ? Promise.reject(new Error('502')) : Promise.resolve()));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  fail = false;
+  timers[1].fn();
+  ap.sync(on(0), 0); // what resync's state load feeds back
+  assert.equal(timers.length, 3);
+  timers[2].fn();
+  assert.deepEqual(targets, [new Date(T0).toISOString(), new Date(T0).toISOString()]);
+});
+test('a successful draw schedules no resync', async () => {
+  const { ap, timers, resyncs } = setupRetry();
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  assert.equal(timers.length, 1);
+  assert.equal(resyncs.n, 0);
+});
+test('a failed resync is reported and tried again', async () => {
+  const err = new Error('state down');
+  const { ap, timers, resyncs, errors } = setupRetry(() => Promise.reject(new Error('502')), () => Promise.reject(err));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  timers[1].fn();
+  await tick();
+  assert.equal(errors[1], err);
+  assert.equal(timers.length, 3);
+  assert.equal(timers[2].ms, 2000);
+  timers[2].fn();
+  assert.equal(resyncs.n, 2);
+});
+test('a resync that throws synchronously is reported and tried again', async () => {
+  const { ap, timers, errors } = setupRetry(() => Promise.reject(new Error('502')), () => { throw new Error('sync'); });
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  timers[1].fn();
+  await tick();
+  assert.equal(errors[1].message, 'sync');
+  assert.equal(timers.length, 3);
+});
+test('stop cancels a pending resync', async () => {
+  const { ap, timers, cleared } = setupRetry(() => Promise.reject(new Error('502')));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  ap.stop();
+  assert.deepEqual(cleared, [1]);
+  ap.stop();
+  assert.deepEqual(cleared, [1]);
+});
+test('a fired resync is not cleared by a later stop', async () => {
+  const { ap, timers, cleared } = setupRetry(() => Promise.reject(new Error('502')));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  timers[1].fn();
+  await tick();
+  ap.stop();
+  assert.deepEqual(cleared, []);
+});
+test('a second failure while a resync is pending does not schedule another', async () => {
+  const { ap, timers } = setupRetry(() => Promise.reject(new Error('502')));
+  ap.sync(on(0), 0);
+  timers[0].fn();
+  await tick();
+  ap.sync(on(0), 0);
+  timers[2].fn();
+  await tick();
+  assert.equal(timers.length, 3);
+});

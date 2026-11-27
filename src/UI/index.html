@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Bingo Current Number</title>
+<link rel="icon" href="data:," />
 <style>
   :root{
     --bg:#0f1720;
@@ -209,9 +210,11 @@
     render();
   }
 
-  // draws one ball; rejects on failure
-  async function loadDraw(gameKey){
-    const res = await fetch(API + '/Get?GameKey=' + encodeURIComponent(gameKey));
+  // draws one ball; rejects on failure. `due` (auto pilot only) is the nextDrawAt this draw
+  // is for: the server skips it if another dealer tab already drew that tick.
+  async function loadDraw(gameKey, due){
+    const url = API + '/Get?GameKey=' + encodeURIComponent(gameKey) + (due ? '&due=' + encodeURIComponent(due) : '');
+    const res = await fetch(url);
     if(!res.ok) throw new Error('fetch failed');
     const json = await res.json();
     console.log('Fetched game state:', json);
@@ -302,6 +305,7 @@
   let snap = null;
   let offsetMs = 0;
   let events = null;
+  const RECONNECT_MS = 3000;
 
   const gameUrl = (path) => API + path + '?GameKey=' + encodeURIComponent(gameKey);
 
@@ -310,13 +314,15 @@
     now: () => Date.now(),
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (id) => clearTimeout(id),
+    // after a failed draw: reload the state, whose snapshot re-syncs (and so retries) auto pilot
+    resync: () => loadState(),
   });
 
   // like drawNext, but rejects on failure (no alert) so auto pilot can warn and retry
-  async function autoDraw() {
+  async function autoDraw(due) {
     playDrawSound();
     await ensureGameKey();
-    await loadDraw(gameKey);
+    await loadDraw(gameKey, due);
     await loadState();
   }
 
@@ -373,7 +379,17 @@
       try { applySnapshot(JSON.parse(e.data)); }
       catch (err) { console.warn('Ignoring bad live update', err); }
     });
-    events.addEventListener('error', () => console.warn('Live updates interrupted'));
+    events.addEventListener('error', () => {
+      console.warn('Live updates interrupted');
+      if (events.readyState !== EventSource.CLOSED) return; // the browser retries by itself
+      // the browser gave up (non-200, e.g. a proxy 502 while the API restarts): reload, then reopen
+      events.close();
+      events = null;
+      setTimeout(() => {
+        loadState().catch((e) => console.warn('Could not reload the game', e));
+        openEvents();
+      }, RECONNECT_MS);
+    });
   }
 
   autoPilotBtn.addEventListener('click', async () => {

@@ -94,3 +94,34 @@ test('auto pilot draws on its own and both screens count down', async ({ browser
   await viewer.page.waitForTimeout(5000);
   expect(await called.count()).toBe(n);
 });
+
+test('two dealer tabs on auto pilot draw each tick once', async ({ browser }) => {
+  const a = await startDealer(browser);
+  const gameUrl = a.page.url();
+  const b = await newPage(browser);
+  await b.page.goto(gameUrl);
+  await expect(b.page.locator('td.cell.called')).toHaveCount(1, { timeout: 10000 });
+
+  // due -> numberOfDrew reported by each tab's auto draw
+  const byDue = new Map();
+  for (const tab of [a, b]) {
+    tab.page.on('response', async (r) => {
+      const due = new URL(r.url()).searchParams.get('due');
+      if (!r.url().includes('/Get?') || !due) return;
+      const body = await r.json().catch(() => null);
+      if (!body || typeof body !== 'object') return;
+      byDue.set(due, [...(byDue.get(due) || []), body.numberOfDrew]);
+    });
+  }
+  await a.page.locator('#autoPilotBtn').click();
+  await expect.poll(() => [...byDue.values()].filter(v => v.length === 2).length, { timeout: 15000 })
+    .toBeGreaterThanOrEqual(2);
+  await a.page.locator('#autoPilotBtn').click();
+  await expect(a.page.locator('#autoPilotBtn')).toContainText('Auto pilot');
+  await a.page.waitForTimeout(1000);
+
+  // both tabs fired at the same tick, yet the server drew one ball for it
+  for (const [, counts] of byDue) if (counts.length === 2) expect(counts[0]).toBe(counts[1]);
+  const balls = await a.page.locator('td.cell.called').count();
+  expect(balls).toBeLessThanOrEqual(1 + byDue.size);
+});

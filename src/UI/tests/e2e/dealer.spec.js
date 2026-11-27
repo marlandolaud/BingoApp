@@ -228,3 +228,73 @@ test('drawing at game over keeps the board', async ({ page }) => {
   await expect(page.locator('#currentNumber')).toHaveText('G50');
   await expect(page.locator('td.cell.called')).toHaveCount(3);
 });
+
+const sseBody = (snap) => ({
+  status: 200,
+  headers: { 'content-type': 'text/event-stream' },
+  // long retry so a finished body does not reconnect during the test
+  body: 'retry: 60000\nevent: state\ndata: ' + JSON.stringify(snap) + '\n\n',
+});
+
+test('a closed live stream is reopened and the viewer count updates', async ({ page }) => {
+  const state = { snap: snapshot() };
+  const requests = await mockApi(page, state);
+  let calls = 0;
+  await page.route(`${API}/Events?*`, r => {
+    requests.push({ method: 'GET', path: '/Events', search: new URL(r.request().url()).search });
+    // first a proxy error (e.g. nginx 502 while the API restarts), then a working stream
+    return ++calls === 1 ? r.fulfill({ status: 502, body: '' }) : r.fulfill(sseBody(snapshot({ viewerCount: 5 })));
+  });
+  await page.goto('/?game=' + KEY);
+  await expect(page.locator('#viewerCount')).toHaveText('👁 2 watching');
+  await expect(page.locator('#viewerCount')).toHaveText('👁 5 watching', { timeout: 10000 });
+  expect(calls).toBe(2);
+  // the reopen also reloads the state, in case anything changed while the stream was down
+  expect(hits(requests, '/State').length).toBeGreaterThanOrEqual(2);
+});
+
+test('an auto pilot draw names the tick it is for', async ({ page }) => {
+  await page.clock.install({ time: T0 });
+  const next = new Date(T0 + 1000).toISOString();
+  const state = { snap: snapshot({ autoPilot: { on: true, nextDrawAt: next } }) };
+  const requests = await mockApi(page, state);
+  await page.goto('/?game=' + KEY);
+  await expect(page.locator('#countdown')).toHaveText('Next ball in 1s');
+  await page.clock.runFor(1000);
+  await expect.poll(() => hits(requests, '/Get').length).toBe(1);
+  expect(hits(requests, '/Get')[0].search).toBe('?GameKey=' + KEY + '&due=' + encodeURIComponent(next));
+});
+
+test('a failed auto pilot draw is retried without a click', async ({ page }) => {
+  await page.clock.install({ time: T0 });
+  const next = new Date(T0 + 1000).toISOString();
+  const state = { snap: snapshot({ autoPilot: { on: true, nextDrawAt: next } }) };
+  const requests = await mockApi(page, state);
+  // one live frame only, so a retry cannot come from the stream
+  await page.route(`${API}/Events?*`, r => r.fulfill(sseBody(state.snap)));
+  let gets = 0;
+  await page.route(`${API}/Get?*`, r => {
+    requests.push({ method: 'GET', path: '/Get', search: new URL(r.request().url()).search });
+    if (++gets === 1) return r.fulfill({ status: 502, body: '' });
+    const drew = { numberOfDrew: 1, currentNumber: 'B7', history: { 0: 'B7' } };
+    state.snap = { ...state.snap, ...drew, autoPilot: { on: false, nextDrawAt: null } };
+    return r.fulfill({ json: drew });
+  });
+  let dialogs = 0;
+  page.on('dialog', d => { dialogs++; d.dismiss(); });
+  await page.goto('/?game=' + KEY);
+  await expect(page.locator('#countdown')).toHaveText('Next ball in 1s');
+  await page.clock.runFor(1000);
+  await expect.poll(() => gets).toBe(1);
+  await page.clock.runFor(2500);
+  await expect.poll(() => gets).toBe(2);
+  expect(hits(requests, '/Get').every(r => r.search === '?GameKey=' + KEY + '&due=' + encodeURIComponent(next))).toBe(true);
+  await expect(page.locator('#currentNumber')).toHaveText('B7');
+  expect(dialogs).toBe(0);
+});
+
+test('the dealer page declares an inline favicon', async ({ page }) => {
+  await mockApi(page, { snap: snapshot() });
+  await page.goto('/');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', 'data:,');
+});

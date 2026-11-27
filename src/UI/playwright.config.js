@@ -18,7 +18,8 @@ module.exports = defineConfig({
       ? [{
           command: 'sh scripts/integration-api.sh',
           url: 'http://localhost:5001/GetGameKey',
-          reuseExistingServer: true,
+          // never test against a stale API left running from an older build
+          reuseExistingServer: false,
           timeout: 120000,
         }]
       : []),
