@@ -22,7 +22,7 @@
   }
   .app-header h1{margin:0;font-size:22px;font-weight:800;letter-spacing:0.04em}
   .app-header h1 span{color:var(--accent)}
-  .controls{display:flex;gap:10px}
+  .controls{display:flex;gap:10px;flex-wrap:wrap}
   .btn{
     font:inherit;font-size:14px;font-weight:600;color:#e2e8f0;cursor:pointer;
     padding:8px 14px;border-radius:8px;
@@ -52,6 +52,23 @@
     user-select:none;
   }
   .big .label{font-size:14px;color:var(--muted);margin-top:6px}
+  .countdown{margin-top:-14px;font-size:15px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+  .countdown:empty{display:none}
+
+  /* invite card: QR join code + live viewer count */
+  .wrap{position:relative}
+  .live-card{
+    position:absolute;top:24px;right:24px;width:180px;box-sizing:border-box;
+    display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px;
+    border-radius:12px;background:var(--card);border:1px solid rgba(255,255,255,0.05);
+    box-shadow:0 6px 18px rgba(2,6,12,0.5);font-size:13px;text-align:center;
+  }
+  .live-card[hidden]{display:none}
+  .live-card .qr{background:#fff;border-radius:8px;line-height:0}
+  .live-card .qr svg{display:block;width:140px;height:140px}
+  .live-card a{color:var(--accent)}
+  .live-card .viewers{font-weight:600;color:#e2e8f0}
+  .live-card .hint{margin:0;font-size:11px;color:var(--muted)}
 
   /* history row */
   .history-wrap{width:100%;max-width:1100px}
@@ -114,6 +131,10 @@
     .board th .count{font-size:9px}
     .board td.cell{padding:4px 0;border-radius:4px;font-size:clamp(9px,2.9vw,14px);letter-spacing:-0.03em}
     .board td.cell.last{outline-width:1px;outline-offset:0}
+    /* phones: the invite card sits below the board */
+    .live-card{position:static;width:100%;max-width:320px;flex-direction:row;text-align:left}
+    .live-card .qr svg{width:110px;height:110px}
+    .live-card .live-info{display:flex;flex-direction:column;gap:6px;min-width:0}
   }
 </style>
 </head>
@@ -123,6 +144,7 @@
     <div class="controls">
       <button type="button" class="btn" id="soundToggle" aria-pressed="true">🔊 Sound on</button>
       <button type="button" class="btn" id="resetBtn">↺ Reset game</button>
+      <button type="button" class="btn" id="autoPilotBtn" aria-pressed="false">▶ Auto pilot</button>
     </div>
   </header>
   <div class="wrap" role="main" aria-live="polite">
@@ -132,6 +154,7 @@
         <div class="label">Current Number</div>
       </div>
     </div>
+    <div class="countdown" id="countdown" aria-live="polite"></div>
 
     <div class="history-wrap">
       <div class="history-title">History</div>
@@ -143,11 +166,22 @@
       <div class="history-title">Called by letter</div>
       <table class="board" id="board" aria-label="Called numbers by letter"><tbody id="boardBody"></tbody></table>
     </div>
+    <section class="live-card" id="liveCard" aria-label="Invite viewers" hidden>
+      <div class="qr" id="qr" role="img" aria-label="QR code to watch this game"></div>
+      <div class="live-info">
+        <div class="viewers" id="viewerCount">👁 0 watching</div>
+        <a id="joinLink" href="#" target="_blank" rel="noopener">Open viewer link</a>
+        <p class="hint" id="localHint" hidden>Opened via localhost: other devices can't use this code. Open the page by its network address instead.</p>
+      </div>
+    </section>
   </div>
 
 <script src="board.js"></script>
 <script src="config.js"></script>
 <script src="api.js"></script>
+<script src="live.js"></script>
+<script src="autopilot.js"></script>
+<script src="vendor/qrcode.js"></script>
 <script>
   let state = {
     currentNumber: 'Push',
@@ -219,16 +253,19 @@
     render();
   }
 
+  // draws one ball; rejects on failure
+  async function loadDraw(gameKey){
+    const res = await fetch(API + '/Get?GameKey=' + encodeURIComponent(gameKey));
+    if(!res.ok) throw new Error('fetch failed');
+    const json = await res.json();
+    console.log('Fetched game state:', json);
+    state.currentNumber = json.currentNumber;
+    state.history = json.history || [];
+    render();
+  }
+
   async function fetchGame(gameKey){
-    try{
-      const res = await fetch(API + '/Get?GameKey=' + encodeURIComponent(gameKey));
-      if(!res.ok) throw new Error('fetch failed');
-      const json = await res.json();
-      console.log('Fetched game state:', json);
-      state.currentNumber = json.currentNumber;
-      state.history = json.history || [];
-      render();
-    }catch(e){alert(e.message);}
+    try{ await loadDraw(gameKey); }catch(e){alert(e.message);}
   }
   
 
@@ -270,18 +307,124 @@
 
   render();
 
+  async function ensureGameKey() {
+        if (gameKey) return;
+        const res = await fetch(API + '/GetGameKey');
+        if(!res.ok) throw new Error('Game key fetch failed');
+        gameKey = await res.json();
+        console.log('Fetched game key:', gameKey);
+        // keep the game across a refresh
+        history.replaceState(null, '', BingoLive.withParam(location.href, 'game', gameKey));
+        openEvents();
+    }
+
   async function drawNext() {
         playDrawSound();
-        if (!gameKey) {
-            const res = await fetch(API + '/GetGameKey');
-            if(!res.ok) throw new Error('Game key fetch failed');
-            const temp = await res.json();
-            gameKey = temp;
-            console.log('Fetched game key:', gameKey);
-        }
+        await ensureGameKey();
         await fetchGame(gameKey);
     }
   elCurrent.addEventListener('click', drawNext, false);
+
+  // ---- live view: snapshots, SSE, QR invite, viewer count, auto pilot ----
+  const autoPilotBtn = document.getElementById('autoPilotBtn');
+  const countdownEl = document.getElementById('countdown');
+  const liveCard = document.getElementById('liveCard');
+  const qrEl = document.getElementById('qr');
+  const joinLink = document.getElementById('joinLink');
+  const viewerCountEl = document.getElementById('viewerCount');
+  document.getElementById('localHint').hidden = !BingoLive.isLocalOnly(location.hostname);
+  let snap = null;
+  let offsetMs = 0;
+  let events = null;
+
+  const gameUrl = (path) => API + path + '?GameKey=' + encodeURIComponent(gameKey);
+
+  const autopilot = BingoAutoPilot.create({
+    draw: autoDraw,
+    now: () => Date.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (id) => clearTimeout(id),
+  });
+
+  // like drawNext, but rejects on failure (no alert) so auto pilot can warn and retry
+  async function autoDraw() {
+    playDrawSound();
+    await ensureGameKey();
+    await loadDraw(gameKey);
+    await loadState();
+  }
+
+  async function loadState() {
+    const res = await fetch(gameUrl('/State'));
+    if (!res.ok) throw new Error('State fetch failed: ' + res.status);
+    applySnapshot(await res.json());
+  }
+
+  function applySnapshot(s) {
+    snap = s;
+    const view = BingoLive.viewState(s, 'Push');
+    state.currentNumber = view.currentNumber;
+    state.history = view.history;
+    render();
+    showJoin(s.joinCode);
+    viewerCountEl.textContent = '👁 ' + (s.viewerCount ?? 0) + ' watching';
+    const offset = BingoLive.clockOffset(s.serverTime, Date.now());
+    if (!Number.isNaN(offset)) offsetMs = offset;
+    renderAutoPilot();
+    renderCountdown();
+    autopilot.sync(s, offsetMs);
+  }
+
+  function showJoin(joinCode) {
+    if (!joinCode) return;
+    const url = BingoLive.joinUrl(location, joinCode);
+    if (qrEl.dataset.url !== url) {
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      qrEl.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2 });
+      qrEl.dataset.url = url;
+      joinLink.href = url;
+    }
+    liveCard.hidden = false;
+  }
+
+  function renderAutoPilot() {
+    const on = Boolean(snap && snap.autoPilot && snap.autoPilot.on);
+    autoPilotBtn.setAttribute('aria-pressed', String(on));
+    autoPilotBtn.textContent = on ? '■ Stop' : '▶ Auto pilot';
+  }
+
+  function renderCountdown() {
+    countdownEl.textContent = snap ? BingoLive.countdownText(snap, Date.now(), offsetMs) : '';
+  }
+  setInterval(renderCountdown, 250);
+
+  function openEvents() {
+    if (events || typeof EventSource === 'undefined') return;
+    events = new EventSource(gameUrl('/Events'));
+    events.addEventListener('state', (e) => {
+      try { applySnapshot(JSON.parse(e.data)); }
+      catch (err) { console.warn('Ignoring bad live update', err); }
+    });
+    events.addEventListener('error', () => console.warn('Live updates interrupted'));
+  }
+
+  autoPilotBtn.addEventListener('click', async () => {
+    try {
+      await ensureGameKey();
+      const on = !(snap && snap.autoPilot && snap.autoPilot.on);
+      const res = await fetch(gameUrl('/AutoPilot') + '&on=' + on, { method: 'POST' });
+      if (!res.ok) throw new Error('Auto pilot toggle failed: ' + res.status);
+      await loadState();
+    } catch (e) { console.warn('Auto pilot toggle failed', e); }
+  });
+
+  gameKey = BingoLive.gameKeyFromUrl(location.search) ?? undefined;
+  if (gameKey) {
+    loadState().catch((e) => console.warn('Could not restore the game', e));
+    openEvents();
+  }
 
   async function resetGame() {
     if (!confirm('Reset the game? All drawn numbers will be cleared.')) return;
