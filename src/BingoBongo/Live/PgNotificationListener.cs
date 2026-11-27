@@ -17,12 +17,20 @@ public class PgNotificationListener(
     /// <summary>Unique per instance, so this listener's backend is identifiable in pg_stat_activity.</summary>
     public string ApplicationName { get; } = $"bingo-listener-{Guid.NewGuid():N}";
 
+    /// <summary>
+    /// The LISTEN connection: named, and with keepalives so a half-open connection (the peer
+    /// vanished without closing it) fails <c>WaitAsync</c> and the loop reconnects.
+    /// </summary>
+    public static string ListenerConnectionString(string? baseConnectionString, string applicationName) =>
+        new NpgsqlConnectionStringBuilder(baseConnectionString)
+        {
+            ApplicationName = applicationName,
+            KeepAlive = 30,
+        }.ConnectionString;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var connectionString = new NpgsqlConnectionStringBuilder(configuration.GetConnectionString("Bingo"))
-        {
-            ApplicationName = ApplicationName,
-        }.ConnectionString;
+        var connectionString = ListenerConnectionString(configuration.GetConnectionString("Bingo"), ApplicationName);
         while (!stoppingToken.IsCancellationRequested)
         {
             try

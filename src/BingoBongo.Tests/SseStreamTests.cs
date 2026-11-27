@@ -2,6 +2,7 @@ using System.Text;
 using BingoBongo.Games;
 using BingoBongo.Live;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace BingoBongo.Tests;
 
@@ -94,5 +95,34 @@ public class SseStreamTests
             new GameEventHub(), TimeSpan.FromHours(1)));
 
         Assert.Equal([SsePresence.Connected, SsePresence.Disconnected], events);
+    }
+
+    private sealed class RecordingBodyFeature(Stream stream) : StreamResponseBodyFeature(stream)
+    {
+        public bool Started { get; private set; }
+
+        public override Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            Started = true;
+            return base.StartAsync(cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Starts_the_response_and_disables_proxy_buffering_before_the_first_frame()
+    {
+        var (ctx, body, abort) = NewContext();
+        var feature = new RecordingBodyFeature(body);
+        ctx.Features.Set<IHttpResponseBodyFeature>(feature);
+        var startedAtLoad = new TaskCompletionSource<bool>();
+
+        var run = SseStream.RunAsync(ctx, Guid.NewGuid(),
+            _ => { startedAtLoad.TrySetResult(feature.Started); return Task.FromResult<GameSnapshot?>(Snapshot(0)); },
+            null, new GameEventHub(), TimeSpan.FromHours(1));
+
+        Assert.True(await startedAtLoad.Task.WaitAsync(Timeout));
+        abort.Cancel();
+        await run.WaitAsync(Timeout);
+        Assert.Equal("no", ctx.Response.Headers["X-Accel-Buffering"]);
     }
 }

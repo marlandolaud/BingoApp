@@ -12,4 +12,5 @@ public record GameSnapshot(
     int ViewerCount,
     Guid? JoinCode);
 
-public record DrawResult(bool GameOver, string? Ball, IReadOnlyDictionary<int, string> History);
+/// <summary>A draw's outcome; <c>Skipped</c> when an auto pilot draw was no longer due (Ball is then the last called, if any).</summary>
+public record DrawResult(bool GameOver, string? Ball, IReadOnlyDictionary<int, string> History, bool Skipped = false);

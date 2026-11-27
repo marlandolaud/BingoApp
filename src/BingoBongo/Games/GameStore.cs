@@ -20,17 +20,27 @@ public class GameStore(
     private readonly LiveOptions _live = live.Value;
     private TimeSpan Interval => TimeSpan.FromSeconds(_autoPilot.IntervalSeconds);
 
-    public async Task<DrawResult> DrawAsync(Guid gameKey, CancellationToken ct)
+    /// <summary>
+    /// Draws the next ball. With <paramref name="due"/> (an auto pilot draw), draws only while
+    /// that is still the scheduled time; otherwise returns the current state without drawing.
+    /// </summary>
+    public async Task<DrawResult> DrawAsync(Guid gameKey, CancellationToken ct, DateTimeOffset? due = null)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var game = await LockGameAsync(gameKey, ct);
         var called = await CalledBallsAsync(gameKey, ct);
 
+        if (!AutoPilotSchedule.IsDue(game.AutoPilotNextDrawAt, due))
+        {
+            await tx.CommitAsync(ct);
+            return new DrawResult(false, called.Count > 0 ? called[^1] : null, GameSnapshotFactory.History(called), Skipped: true);
+        }
+
         var ball = BallPicker.Next(called, Random.Shared);
         if (ball is null)
         {
             await tx.CommitAsync(ct);
-            return new DrawResult(true, null, ToHistory(called));
+            return new DrawResult(true, null, GameSnapshotFactory.History(called));
         }
 
         db.Draws.Add(new DrawEntity { GameId = gameKey, Seq = called.Count, Ball = ball });
@@ -42,7 +52,7 @@ public class GameStore(
         await tx.CommitAsync(ct);
 
         called.Add(ball);
-        return new DrawResult(false, ball, ToHistory(called));
+        return new DrawResult(false, ball, GameSnapshotFactory.History(called));
     }
 
     public async Task ResetAsync(Guid gameKey, CancellationToken ct)
@@ -136,18 +146,9 @@ public class GameStore(
     {
         var called = await CalledBallsAsync(game.Id, ct);
         var now = clock.GetUtcNow();
-        var seenSince = now - TimeSpan.FromSeconds(2 * _live.HeartbeatSeconds);
+        var seenSince = ViewerPresence.WatchingSince(now, _live.HeartbeatSeconds);
         var viewerCount = await db.Viewers.CountAsync(v => v.GameId == game.Id && v.LastSeenAt > seenSince, ct);
-
-        return new GameSnapshot(
-            game.Round,
-            called.Count,
-            called.Count > 0 ? called[^1] : null,
-            ToHistory(called),
-            new AutoPilotState(game.AutoPilotNextDrawAt != null, game.AutoPilotNextDrawAt),
-            now,
-            viewerCount,
-            includeJoinCode ? game.JoinCode : null);
+        return GameSnapshotFactory.Create(game, called, viewerCount, now, includeJoinCode);
     }
 
     /// <summary>Creates the game row if missing, then locks it. Must run inside a transaction.</summary>
@@ -179,7 +180,4 @@ public class GameStore(
 
     private Task NotifyAsync(Guid gameKey, CancellationToken ct) =>
         db.Database.ExecuteSqlRawAsync("SELECT pg_notify('game_events', {0})", [gameKey.ToString()], ct);
-
-    private static Dictionary<int, string> ToHistory(IReadOnlyList<string> called) =>
-        called.Select((ball, i) => (ball, i)).ToDictionary(x => x.i, x => x.ball);
 }

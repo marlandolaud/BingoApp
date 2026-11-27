@@ -85,25 +85,31 @@ public class BingoController : Controller
     }
 
     [HttpGet("Get")]
-    public async Task<IActionResult> Index([FromQuery] Guid GameKey, CancellationToken ct)
+    // `due`: an auto pilot draw names the nextDrawAt it is for; if that is no longer the
+    // scheduled time (another dealer tab already drew it), nothing is drawn and the current
+    // state comes back in the same shape.
+    public async Task<IActionResult> Index([FromQuery] Guid GameKey, [FromQuery] DateTimeOffset? due, CancellationToken ct)
     {
         if (GameKey == Guid.Empty)
         {
             return BadRequest("GameKey is empty");
         }
 
-        var draw = await _games.DrawAsync(GameKey, ct);
+        var draw = await _games.DrawAsync(GameKey, ct, due);
         if (draw.GameOver)
         {
             return Ok("Game Over!");
         }
 
-        _logger.LogInformation("bingoSelection:{bingoSelection}", draw.Ball);
+        if (!draw.Skipped)
+        {
+            _logger.LogInformation("bingoSelection:{bingoSelection}", draw.Ball);
+        }
 
         var response = new ResponseDto()
         {
             NumberOfDrew = draw.History.Count,
-            CurrentNumber = draw.Ball!,
+            CurrentNumber = draw.Ball ?? "",
             History = new Dictionary<int, string>(draw.History)
         };
         

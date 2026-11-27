@@ -153,4 +153,104 @@ public class AutoPilotTests
         var state = await SseClient.GetJsonAsync(f.CreateClient(), $"/State?GameKey={key}");
         Assert.Equal(clock.GetUtcNow(), state.GetProperty("serverTime").GetDateTimeOffset());
     }
+
+    private static async Task<string> NextDrawAtRaw(HttpClient c, Guid key) =>
+        (await SseClient.GetJsonAsync(c, $"/State?GameKey={key}")).GetProperty("autoPilot").GetProperty("nextDrawAt").GetString()!;
+
+    private static async Task<int> Drawn(HttpClient c, Guid key) =>
+        (await SseClient.GetJsonAsync(c, $"/State?GameKey={key}")).GetProperty("numberOfDrew").GetInt32();
+
+    [Fact]
+    public async Task Two_dealers_drawing_the_same_due_tick_draw_one_ball()
+    {
+        var key = Guid.NewGuid();
+        var (f, clock) = Create();
+        using var _f = f;
+        var client = f.CreateClient();
+        await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
+        await SetAutoPilot(client, key, true);
+        var due = Uri.EscapeDataString(await NextDrawAtRaw(client, key));
+        clock.Advance(TimeSpan.FromSeconds(1)); // so the draw moves nextDrawAt to a new instant
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 2)
+            .Select(_ => client.GetAsync($"/Get?GameKey={key}&due={due}")));
+
+        Assert.All(responses, r => Assert.Equal(System.Net.HttpStatusCode.OK, r.StatusCode));
+        Assert.Equal(2, await Drawn(client, key));
+        foreach (var r in responses)
+        {
+            var body = System.Text.Json.JsonDocument.Parse(await r.Content.ReadAsStringAsync()).RootElement;
+            Assert.Equal(2, body.GetProperty("numberOfDrew").GetInt32());
+            Assert.Equal(2, body.GetProperty("history").EnumerateObject().Count());
+        }
+    }
+
+    [Fact]
+    public async Task A_stale_due_draws_nothing_and_returns_the_current_state()
+    {
+        var key = Guid.NewGuid();
+        var (f, clock) = Create();
+        using var _f = f;
+        var client = f.CreateClient();
+        await SetAutoPilot(client, key, true);
+        var stale = Uri.EscapeDataString(await NextDrawAtRaw(client, key));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var first = await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
+
+        var skipped = await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}&due={stale}");
+
+        Assert.Equal(1, await Drawn(client, key));
+        Assert.Equal(1, skipped.GetProperty("numberOfDrew").GetInt32());
+        Assert.Equal(first.GetProperty("currentNumber").GetString(), skipped.GetProperty("currentNumber").GetString());
+    }
+
+    [Fact]
+    public async Task A_due_when_auto_pilot_is_off_draws_nothing()
+    {
+        var key = Guid.NewGuid();
+        var (f, clock) = Create();
+        using var _f = f;
+        var client = f.CreateClient();
+        await SetAutoPilot(client, key, true);
+        var due = Uri.EscapeDataString(await NextDrawAtRaw(client, key));
+        await SetAutoPilot(client, key, false);
+
+        var skipped = await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}&due={due}");
+
+        Assert.Equal(0, await Drawn(client, key));
+        Assert.Equal(0, skipped.GetProperty("numberOfDrew").GetInt32());
+        Assert.Equal("", skipped.GetProperty("currentNumber").GetString());
+    }
+
+    [Fact]
+    public async Task A_matching_due_draws_and_reschedules()
+    {
+        var key = Guid.NewGuid();
+        var (f, clock) = Create();
+        using var _f = f;
+        var client = f.CreateClient();
+        await SetAutoPilot(client, key, true);
+        var due = await NextDrawAtRaw(client, key);
+        clock.Advance(TimeSpan.FromSeconds(1));
+
+        var drew = await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}&due={Uri.EscapeDataString(due)}");
+
+        Assert.Equal(1, drew.GetProperty("numberOfDrew").GetInt32());
+        Assert.NotEqual(due, await NextDrawAtRaw(client, key));
+    }
+
+    [Fact]
+    public async Task A_draw_without_due_still_draws_while_auto_pilot_is_on()
+    {
+        var key = Guid.NewGuid();
+        var (f, _) = Create();
+        using var _f = f;
+        var client = f.CreateClient();
+        await SetAutoPilot(client, key, true);
+
+        await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
+        await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
+
+        Assert.Equal(2, await Drawn(client, key));
+    }
 }

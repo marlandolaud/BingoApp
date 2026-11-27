@@ -36,3 +36,39 @@ public class AutoPilotScheduleTests
     public void Toggle_on_when_game_over_stays_off() =>
         Assert.Null(AutoPilotSchedule.Toggle(true, 75, Now, Interval));
 }
+
+[Trait("Category", "Unit")]
+public class AutoPilotScheduleIsDueTests
+{
+    private static readonly DateTimeOffset At = DateTimeOffset.UnixEpoch.AddDays(20000).AddTicks(1234560);
+
+    [Fact]
+    public void A_draw_without_a_target_is_always_due()
+    {
+        Assert.True(AutoPilotSchedule.IsDue(null, null));
+        Assert.True(AutoPilotSchedule.IsDue(At, null));
+    }
+
+    [Fact]
+    public void The_scheduled_target_is_due() =>
+        Assert.True(AutoPilotSchedule.IsDue(At, At));
+
+    [Fact]
+    public void A_target_in_another_offset_is_the_same_instant() =>
+        Assert.True(AutoPilotSchedule.IsDue(At, At.ToOffset(TimeSpan.FromHours(2))));
+
+    [Fact]
+    public void Sub_microsecond_differences_are_ignored_like_postgres() =>
+        Assert.True(AutoPilotSchedule.IsDue(At, At.AddTicks(5)));
+
+    [Fact]
+    public void A_one_microsecond_difference_is_stale()
+    {
+        Assert.False(AutoPilotSchedule.IsDue(At, At.AddTicks(10)));
+        Assert.False(AutoPilotSchedule.IsDue(At, At.AddTicks(-10)));
+    }
+
+    [Fact]
+    public void A_target_when_auto_pilot_is_off_is_stale() =>
+        Assert.False(AutoPilotSchedule.IsDue(null, At));
+}
