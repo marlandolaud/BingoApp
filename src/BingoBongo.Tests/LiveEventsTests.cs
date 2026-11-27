@@ -44,9 +44,9 @@ public class LiveEventsTests
         await using var frames = SseClient.ReadStatesAsync(client, $"/Events?GameKey={key}", cts.Token).GetAsyncEnumerator(cts.Token);
         await Next(frames);
 
-        var draw = await GetJson(client, $"/Get?GameKey={key}");
+        var draw = await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
 
-        var next = await NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
+        var next = await SseClient.NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
         Assert.Equal(draw.GetProperty("currentNumber").GetString(), next.GetProperty("currentNumber").GetString());
     }
 
@@ -60,17 +60,17 @@ public class LiveEventsTests
         await using var frames = SseClient.ReadStatesAsync(client, $"/Events?GameKey={key}", cts.Token).GetAsyncEnumerator(cts.Token);
         await Next(frames);
 
-        await GetJson(client, $"/Get?GameKey={key}");
-        await NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
+        await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
+        await SseClient.NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
 
         (await client.PostAsync($"/Reset?GameKey={key}", null)).EnsureSuccessStatusCode();
-        var cleared = await NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 0);
+        var cleared = await SseClient.NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 0);
         Assert.Equal(2, cleared.GetProperty("round").GetInt32());
         Assert.Equal(JsonValueKind.Null, cleared.GetProperty("currentNumber").ValueKind);
         Assert.Empty(cleared.GetProperty("history").EnumerateObject());
 
-        var draw = await GetJson(client, $"/Get?GameKey={key}");
-        var after = await NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
+        var draw = await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
+        var after = await SseClient.NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
         Assert.Equal(draw.GetProperty("currentNumber").GetString(), after.GetProperty("currentNumber").GetString());
     }
 
@@ -85,9 +85,9 @@ public class LiveEventsTests
         await using var frames = SseClient.ReadStatesAsync(b.CreateClient(), $"/Events?GameKey={key}", cts.Token).GetAsyncEnumerator(cts.Token);
         await Next(frames);
 
-        await GetJson(clientA, $"/Get?GameKey={key}");
+        await SseClient.GetJsonAsync(clientA, $"/Get?GameKey={key}");
 
-        await NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
+        await SseClient.NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
     }
 
     [Fact]
@@ -123,9 +123,9 @@ public class LiveEventsTests
         }
         // The draw may land before or after LISTEN is re-established; the reconnect's
         // PublishAll covers the first case and the notification the second.
-        await GetJson(client, $"/Get?GameKey={key}");
+        await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
 
-        await NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
+        await SseClient.NextMatching(frames, s => s.GetProperty("numberOfDrew").GetInt32() == 1);
     }
 
     [Fact]
@@ -150,26 +150,5 @@ public class LiveEventsTests
     {
         Assert.True(await frames.MoveNextAsync(), "stream ended");
         return frames.Current;
-    }
-
-    // Live streams may emit an extra snapshot (e.g. a notification that raced the initial load),
-    // so skip frames until the expected state arrives; the enumerator's token bounds the wait.
-    private static async Task<JsonElement> NextMatching(IAsyncEnumerator<JsonElement> frames, Func<JsonElement, bool> match)
-    {
-        while (true)
-        {
-            var frame = await Next(frames);
-            if (match(frame))
-            {
-                return frame;
-            }
-        }
-    }
-
-    private static async Task<JsonElement> GetJson(HttpClient client, string url)
-    {
-        var response = await client.GetAsync(url);
-        response.EnsureSuccessStatusCode();
-        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
     }
 }

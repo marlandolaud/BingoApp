@@ -17,23 +17,6 @@ public class AutoPilotTests
         return (factory, clock);
     }
 
-    private static async Task<JsonElement> Json(HttpClient c, string url)
-    {
-        var r = await c.GetAsync(url);
-        r.EnsureSuccessStatusCode();
-        return JsonDocument.Parse(await r.Content.ReadAsStringAsync()).RootElement.Clone();
-    }
-
-    private static async Task<JsonElement> NextMatching(
-        IAsyncEnumerator<JsonElement> frames, Func<JsonElement, bool> predicate)
-    {
-        while (await frames.MoveNextAsync())
-        {
-            if (predicate(frames.Current)) return frames.Current;
-        }
-        throw new InvalidOperationException("Stream ended");
-    }
-
     private static Task SetAutoPilot(HttpClient c, Guid key, bool on) =>
         c.PostAsync($"/AutoPilot?GameKey={key}&on={on.ToString().ToLowerInvariant()}", null);
 
@@ -52,10 +35,10 @@ public class AutoPilotTests
 
         Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
         var expected = clock.GetUtcNow().AddSeconds(1);
-        var state = (await Json(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
+        var state = (await SseClient.GetJsonAsync(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
         Assert.True(state.GetProperty("on").GetBoolean());
         Assert.Equal(expected, state.GetProperty("nextDrawAt").GetDateTimeOffset());
-        var pushed = await NextMatching(frames, s => s.GetProperty("autoPilot").GetProperty("on").GetBoolean());
+        var pushed = await SseClient.NextMatching(frames, s => s.GetProperty("autoPilot").GetProperty("on").GetBoolean());
         Assert.Equal(expected, pushed.GetProperty("autoPilot").GetProperty("nextDrawAt").GetDateTimeOffset());
     }
 
@@ -78,9 +61,9 @@ public class AutoPilotTests
         await SetAutoPilot(client, key, true);
 
         clock.Advance(TimeSpan.FromSeconds(5));
-        await Json(client, $"/Get?GameKey={key}");
+        await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
 
-        var state = (await Json(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
+        var state = (await SseClient.GetJsonAsync(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
         Assert.True(state.GetProperty("on").GetBoolean());
         Assert.Equal(clock.GetUtcNow().AddSeconds(1), state.GetProperty("nextDrawAt").GetDateTimeOffset());
     }
@@ -92,8 +75,8 @@ public class AutoPilotTests
         var (f, _) = Create();
         using var _f = f;
         var client = f.CreateClient();
-        await Json(client, $"/Get?GameKey={key}");
-        var state = (await Json(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
+        await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
+        var state = (await SseClient.GetJsonAsync(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
         Assert.False(state.GetProperty("on").GetBoolean());
     }
 
@@ -107,7 +90,7 @@ public class AutoPilotTests
         await SetAutoPilot(client, key, true);
         await SetAutoPilot(client, key, false);
 
-        var state = (await Json(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
+        var state = (await SseClient.GetJsonAsync(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
         Assert.False(state.GetProperty("on").GetBoolean());
         Assert.Equal(JsonValueKind.Null, state.GetProperty("nextDrawAt").ValueKind);
     }
@@ -122,7 +105,7 @@ public class AutoPilotTests
         await SetAutoPilot(client, key, true);
         await client.PostAsync($"/Reset?GameKey={key}", null);
 
-        var state = (await Json(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
+        var state = (await SseClient.GetJsonAsync(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
         Assert.False(state.GetProperty("on").GetBoolean());
     }
 
@@ -133,15 +116,32 @@ public class AutoPilotTests
         var (f, _) = Create();
         using var _f = f;
         var client = f.CreateClient();
-        for (var i = 0; i < 74; i++) await Json(client, $"/Get?GameKey={key}");
+        for (var i = 0; i < 74; i++) await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
         await SetAutoPilot(client, key, true);
-        Assert.True((await Json(client, $"/State?GameKey={key}")).GetProperty("autoPilot").GetProperty("on").GetBoolean());
+        Assert.True((await SseClient.GetJsonAsync(client, $"/State?GameKey={key}")).GetProperty("autoPilot").GetProperty("on").GetBoolean());
 
-        await Json(client, $"/Get?GameKey={key}");
+        await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
 
-        var state = await Json(client, $"/State?GameKey={key}");
+        var state = await SseClient.GetJsonAsync(client, $"/State?GameKey={key}");
         Assert.Equal(75, state.GetProperty("numberOfDrew").GetInt32());
         Assert.False(state.GetProperty("autoPilot").GetProperty("on").GetBoolean());
+    }
+
+    [Fact]
+    public async Task AutoPilot_on_when_game_over_stays_off()
+    {
+        var key = Guid.NewGuid();
+        var (f, _) = Create();
+        using var _f = f;
+        var client = f.CreateClient();
+        for (var i = 0; i < 75; i++) await SseClient.GetJsonAsync(client, $"/Get?GameKey={key}");
+
+        var response = await client.PostAsync($"/AutoPilot?GameKey={key}&on=true", null);
+
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
+        var state = (await SseClient.GetJsonAsync(client, $"/State?GameKey={key}")).GetProperty("autoPilot");
+        Assert.False(state.GetProperty("on").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, state.GetProperty("nextDrawAt").ValueKind);
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public class AutoPilotTests
         var key = Guid.NewGuid();
         var (f, clock) = Create();
         using var _ = f;
-        var state = await Json(f.CreateClient(), $"/State?GameKey={key}");
+        var state = await SseClient.GetJsonAsync(f.CreateClient(), $"/State?GameKey={key}");
         Assert.Equal(clock.GetUtcNow(), state.GetProperty("serverTime").GetDateTimeOffset());
     }
 }

@@ -47,4 +47,27 @@ public static class SseClient
             }
         }
     }
+
+    /// <summary>
+    /// Live streams may emit an extra snapshot (e.g. a notification that raced the initial load),
+    /// so skip frames until the expected state arrives; the enumerator's token bounds the wait.
+    /// </summary>
+    public static async Task<JsonElement> NextMatching(IAsyncEnumerator<JsonElement> frames, Func<JsonElement, bool> match)
+    {
+        while (true)
+        {
+            Assert.True(await frames.MoveNextAsync(), "stream ended");
+            if (match(frames.Current))
+            {
+                return frames.Current;
+            }
+        }
+    }
+
+    public static async Task<JsonElement> GetJsonAsync(HttpClient client, string url)
+    {
+        var response = await client.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+    }
 }
