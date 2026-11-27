@@ -96,5 +96,7 @@ test.describe('ngrok viewer exemption', () => {
     expect((await request.get(url + '/watch.html', { headers })).status()).toBe(200);
     expect((await request.get(url + '/', { headers })).status()).toBe(401);
     expect((await request.get(url + '/api/GetGameKey', { headers })).status()).toBe(401);
+    const traversal = await request.get(url + '/api/watch/..%2fGetGameKey', { headers });
+    expect(traversal.status()).toBe(401);
   });
 });

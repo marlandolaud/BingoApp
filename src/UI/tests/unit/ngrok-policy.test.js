@@ -20,7 +20,7 @@ function render(env) {
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 
-const EXPR = "!(req.url.path in ['/watch.html','/board.js','/api.js','/config.js','/live.js','/api/viewers'] || req.url.path.startsWith('/api/watch/'))";
+const EXPR = "!(req.url.path in ['/watch.html','/board.js','/api.js','/config.js','/live.js','/api/viewers'] || req.url.path.matches('^/api/watch/[0-9a-fA-F-]{36}/(state|events)$'))";
 
 function expression() {
   const { out } = render({ BASIC_AUTH_USER: 'host', BASIC_AUTH_PASS: 'letmein123' });
@@ -69,19 +69,40 @@ test('accepts a password of exactly 8 characters', () => {
   assert.equal(render({ BASIC_AUTH_USER: 'host', BASIC_AUTH_PASS: '12345678' }).code, 0);
 });
 
-test('exempts exactly the viewer paths', () => {
+function parseExemption() {
   const expr = expression();
   const list = expr.match(/req\.url\.path in \[([^\]]*)\]/)[1].split(',').map(x => x.trim().replace(/^'|'$/g, ''));
+  const patterns = [...expr.matchAll(/matches\('([^']*)'\)/g)].map(m => m[1]);
+  return { expr, list, patterns };
+}
+const isExempt = ({ list, patterns }, p) => list.includes(p) || patterns.some(r => new RegExp(r).test(p));
+
+test('exempts exactly the viewer paths', () => {
+  const { expr, list, patterns } = parseExemption();
   assert.deepEqual(list, ['/watch.html', '/board.js', '/api.js', '/config.js', '/live.js', '/api/viewers']);
-  assert.deepEqual([...expr.matchAll(/startsWith\('([^']*)'\)/g)].map(m => m[1]), ['/api/watch/']);
+  assert.deepEqual(patterns, ['^/api/watch/[0-9a-fA-F-]{36}/(state|events)$']);
+  assert.ok(!expr.includes('startsWith'), 'no prefix match (path traversal)');
 });
 
 test('does not exempt dealer paths', () => {
-  const expr = expression();
-  const list = expr.match(/req\.url\.path in \[([^\]]*)\]/)[1];
-  for (const p of ['/index.html', "'/'", '/api/Get', '/api/Reset', '/api/State', '/api/Events', '/api/AutoPilot']) {
-    assert.ok(!list.includes(p === "'/'" ? p : p + "'"), `${p} must not be exempt`);
+  const ex = parseExemption();
+  for (const p of ['/', '/index.html', '/autopilot.js', '/api/GetGameKey', '/api/Get', '/api/Reset', '/api/State', '/api/Events', '/api/AutoPilot']) {
+    assert.ok(!isExempt(ex, p), `${p} must not be exempt`);
   }
-  assert.ok(!expr.includes('/api/GetGameKey'));
-  assert.ok(!expr.includes('/autopilot.js'));
+});
+
+test('exempts viewer state and events paths for a guid', () => {
+  const ex = parseExemption();
+  const g = '123e4567-e89b-12d3-a456-426614174000';
+  assert.ok(isExempt(ex, `/api/watch/${g}/state`));
+  assert.ok(isExempt(ex, `/api/watch/${g}/events`));
+});
+
+test('does not exempt traversal or malformed paths under /api/watch/', () => {
+  const ex = parseExemption();
+  const g = '123e4567-e89b-12d3-a456-426614174000';
+  for (const p of ['/api/watch/../GetGameKey', '/api/watch/%2e%2e/Get', '/api/watch//GetGameKey',
+    `/api/watch/${g}/state/../../Reset`, `/api/watch/${g}/STATE`, '/api/watch/', `/api/watch/${g}/state\n/x`]) {
+    assert.ok(!isExempt(ex, p), `${JSON.stringify(p)} must not be exempt`);
+  }
 });

@@ -17,8 +17,10 @@ case "$user" in *:*) fail "BASIC_AUTH_USER must not contain a colon" ;; esac
 json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
 # Viewer paths (live watch page and its API) bypass basic auth; everything else,
-# including the dealer page and API, still requires it.
-expr="!(req.url.path in ['/watch.html','/board.js','/api.js','/config.js','/live.js','/api/viewers'] || req.url.path.startsWith('/api/watch/'))"
+# including the dealer page and API, still requires it. The watch API is an anchored
+# regex, not a prefix: nginx normalizes '..' and %2e after ngrok has checked the raw
+# path, so a prefix would let /api/watch/../GetGameKey skip auth.
+expr="!(req.url.path in ['/watch.html','/board.js','/api.js','/config.js','/live.js','/api/viewers'] || req.url.path.matches('^/api/watch/[0-9a-fA-F-]{36}/(state|events)$'))"
 
 printf '{"on_http_request":[{"expressions":["%s"],"actions":[{"type":"basic-auth","config":{"credentials":["%s:%s"]}}]}]}\n' \
   "$expr" "$(json_escape "$user")" "$(json_escape "$pass")"
