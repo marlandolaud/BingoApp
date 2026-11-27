@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/unit/",
-    "test:coverage": "c8 --check-coverage --lines 90 --branches 90 --functions 90 --statements 90 --include board.js --include api.js node --test tests/unit/",
+    "test:coverage": "c8 --check-coverage --lines 90 --branches 90 --functions 90 --statements 90 --include board.js --include api.js --include live.js --include autopilot.js node --test tests/unit/",
     "test:e2e": "playwright test --project=e2e",
     "test:integration": "INTEGRATION=1 playwright test --project=integration",
     "test:mutation": "stryker run",
