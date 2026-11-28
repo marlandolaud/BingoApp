@@ -1,90 +1,116 @@
 using System.Text;
+using BingoBongo.Games;
+using BingoBongo.Live;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 
 namespace BingoBongo;
 
 [ApiController]
 public class BingoController : Controller
 {
-    private readonly IMemoryCache _memoryCache;
+    private readonly GameStore _games;
     private readonly ILogger<BingoController> _logger;
-    private static readonly string[] Letters = ["B", "I", "N", "G", "O"];
-    private readonly Random _rand = Random.Shared;
 
-    public BingoController(IMemoryCache memoryCache, ILogger<BingoController> logger)
+    public BingoController(GameStore games, ILogger<BingoController> logger)
     {
-        _memoryCache = memoryCache;
+        _games = games;
         _logger = logger;
     }
 
     [HttpPost("Reset")]
-    public IActionResult Reset([FromQuery]  Guid GameKey)
+    public async Task<IActionResult> Reset([FromQuery] Guid GameKey, CancellationToken ct)
     {
         if (GameKey == Guid.Empty)
         {
             return BadRequest("GameKey is empty");
         }
-        
-        _memoryCache.Set(GameKey, new Dictionary<int,string>());
+
+        await _games.ResetAsync(GameKey, ct);
         return Ok();
     }
     
     
+    [HttpPost("AutoPilot")]
+    public async Task<IActionResult> AutoPilot([FromQuery] Guid GameKey, [FromQuery] bool on, CancellationToken ct)
+    {
+        if (GameKey == Guid.Empty)
+        {
+            return BadRequest("GameKey is empty");
+        }
+
+        await _games.SetAutoPilotAsync(GameKey, on, ct);
+        return NoContent();
+    }
+
     [HttpGet("GetGameKey")]
     public IActionResult GetGameKey()
     {
         return Ok(Guid.NewGuid());
     }
-    
-    [HttpGet("Get")]
-    public IActionResult Index([FromQuery] Guid GameKey)
+
+    [HttpGet("State")]
+    public async Task<IActionResult> State([FromQuery] Guid GameKey, CancellationToken ct)
     {
         if (GameKey == Guid.Empty)
         {
             return BadRequest("GameKey is empty");
         }
-        
-        _memoryCache.TryGetValue(GameKey, out Dictionary<int,string> myBingoHistory);
-        if (myBingoHistory == null)
+
+        return Ok(await _games.GetDealerSnapshotAsync(GameKey, ct));
+    }
+    
+    [HttpGet("Events")]
+    public async Task<IActionResult> Events(
+        [FromQuery] Guid GameKey,
+        [FromServices] GameEventHub hub,
+        [FromServices] IServiceScopeFactory scopes,
+        [FromServices] IOptions<LiveOptions> live)
+    {
+        if (GameKey == Guid.Empty)
         {
-            _logger.LogInformation("No bingo history found");
-            myBingoHistory = new Dictionary<int,string>();
+            return BadRequest("GameKey is empty");
         }
 
-        var numberOfDraws = myBingoHistory.Count;
-        if (numberOfDraws >= 75)
+        // The stream outlives any one DbContext's useful life, so each load gets a fresh scope.
+        async Task<GameSnapshot?> Load(CancellationToken ct)
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<GameStore>().GetDealerSnapshotAsync(GameKey, ct);
+        }
+
+        await SseStream.RunAsync(HttpContext, GameKey, Load, presence: null, hub,
+            TimeSpan.FromSeconds(live.Value.HeartbeatSeconds));
+        return new EmptyResult();
+    }
+
+    [HttpGet("Get")]
+    // `due`: an auto pilot draw names the nextDrawAt it is for; if that is no longer the
+    // scheduled time (another dealer tab already drew it), nothing is drawn and the current
+    // state comes back in the same shape.
+    public async Task<IActionResult> Index([FromQuery] Guid GameKey, [FromQuery] DateTimeOffset? due, CancellationToken ct)
+    {
+        if (GameKey == Guid.Empty)
+        {
+            return BadRequest("GameKey is empty");
+        }
+
+        var draw = await _games.DrawAsync(GameKey, ct, due);
+        if (draw.GameOver)
         {
             return Ok("Game Over!");
         }
 
-        // Balanced draw: pick among the letters called least so far (that still
-        // have numbers left), then a random uncalled number within that letter.
-        // Keeps every letter within one call of the others.
-        var called = myBingoHistory.Values.ToHashSet();
-        var remainingByLetter = Letters
-            .Select((letter, i) => (
-                Letter: letter,
-                Remaining: Enumerable.Range(i * 15 + 1, 15)
-                    .Select(n => $"{letter}{n}")
-                    .Where(ball => !called.Contains(ball))
-                    .ToList()))
-            .Where(x => x.Remaining.Count > 0)
-            .ToList();
-        var mostRemaining = remainingByLetter.Max(x => x.Remaining.Count);
-        var candidates = remainingByLetter.Where(x => x.Remaining.Count == mostRemaining).ToList();
-        var chosen = candidates[_rand.Next(candidates.Count)];
-        var bingoSelection = chosen.Remaining[_rand.Next(chosen.Remaining.Count)];
-        _logger.LogInformation("bingoSelection:{bingoSelection}", bingoSelection);
-        
-        myBingoHistory.Add(myBingoHistory.Count, bingoSelection);
-        _memoryCache.Set(GameKey, myBingoHistory);
+        if (!draw.Skipped)
+        {
+            _logger.LogInformation("bingoSelection:{bingoSelection}", draw.Ball);
+        }
 
         var response = new ResponseDto()
         {
-            NumberOfDrew = myBingoHistory.Count,
-            CurrentNumber = bingoSelection,
-            History = myBingoHistory
+            NumberOfDrew = draw.History.Count,
+            CurrentNumber = draw.Ball ?? "",
+            History = new Dictionary<int, string>(draw.History)
         };
         
         return Ok(response);

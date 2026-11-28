@@ -53,3 +53,59 @@ test.describe('ngrok tunnel', () => {
     expect((await request.get(url + '/api/GetGameKey', { headers })).status()).toBe(200);
   });
 });
+
+const { execSync } = require('node:child_process');
+
+async function newGame(request) {
+  const key = await (await request.get(UI + '/api/GetGameKey')).json();
+  return key;
+}
+
+test('game survives an api restart', async ({ request }) => {
+  test.setTimeout(90_000);
+  const key = await newGame(request);
+  for (let i = 0; i < 2; i++) {
+    expect((await request.get(`${UI}/api/Get?GameKey=${key}`)).status()).toBe(200);
+  }
+  execSync('docker compose restart api', { cwd: '..', stdio: 'ignore' });
+  await expect.poll(async () => {
+    const r = await request.get(`${UI}/api/State?GameKey=${key}`).catch(() => null);
+    return r ? r.status() : 0;
+  }, { timeout: 60_000 }).toBe(200);
+  const state = await (await request.get(`${UI}/api/State?GameKey=${key}`)).json();
+  expect(state.numberOfDrew).toBe(2);
+});
+
+test('watch page streams through nginx', async ({ page, request }) => {
+  const key = await newGame(request);
+  const { joinCode } = await (await request.get(`${UI}/api/State?GameKey=${key}`)).json();
+  const joined = await request.post(`${UI}/api/viewers?join=${joinCode}`);
+  expect(joined.status()).toBe(200);
+  const { viewerId } = await joined.json();
+  await page.goto(`${UI}/watch.html?v=${viewerId}`);
+  await expect(page.locator('#status')).not.toHaveText('Connecting…');
+  const drawn = await (await request.get(`${UI}/api/Get?GameKey=${key}`)).json();
+  await expect(page.locator('#currentNumber')).toHaveText(drawn.currentNumber, { timeout: 3000 });
+});
+
+test.describe('ngrok viewer exemption', () => {
+  test('viewer paths need no auth but dealer page does', async ({ request }) => {
+    const url = await publicUrl(request);
+    test.skip(!url, 'ngrok tunnel not running (needs NGROK_AUTHTOKEN)');
+    const headers = { 'ngrok-skip-browser-warning': '1' };
+    expect((await request.get(url + '/watch.html', { headers })).status()).toBe(200);
+    expect((await request.get(url + '/', { headers })).status()).toBe(401);
+    expect((await request.get(url + '/api/GetGameKey', { headers })).status()).toBe(401);
+    const traversal = await request.get(url + '/api/watch/..%2fGetGameKey', { headers });
+    expect(traversal.status()).toBe(401);
+  });
+});
+
+test('nginx serves the shared stylesheet and the self-hosted font', async ({ request }) => {
+  const css = await request.get(UI + '/styles.css');
+  expect(css.status()).toBe(200);
+  expect(css.headers()['content-type']).toContain('text/css');
+  const font = await request.get(UI + '/vendor/fonts/atkinson-hyperlegible-next.woff2');
+  expect(font.status()).toBe(200);
+  expect(font.headers()['content-type']).toBe('font/woff2');
+});

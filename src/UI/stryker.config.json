@@ -2,7 +2,7 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "command",
   "commandRunner": { "command": "npm test" },
-  "mutate": ["board.js", "api.js"],
+  "mutate": ["board.js", "api.js", "live.js", "autopilot.js"],
   "coverageAnalysis": "off",
   "reporters": ["clear-text", "progress"],
   "thresholds": { "high": 90, "low": 80, "break": 80 },

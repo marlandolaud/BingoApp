@@ -4,118 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Bingo Current Number</title>
-<style>
-  :root{
-    --bg:#0f1720;
-    --card:#0b1220;
-    --accent:#10b981;
-    --muted:#94a3b8;
-  }
-  html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#071022);font-family:Inter,system-ui,Arial;color:white}
-  body{display:flex;flex-direction:column}
-  /* header */
-  .app-header{
-    display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
-    padding:16px 24px;
-    background:rgba(255,255,255,0.02);
-    border-bottom:1px solid rgba(255,255,255,0.05);
-  }
-  .app-header h1{margin:0;font-size:22px;font-weight:800;letter-spacing:0.04em}
-  .app-header h1 span{color:var(--accent)}
-  .controls{display:flex;gap:10px}
-  .btn{
-    font:inherit;font-size:14px;font-weight:600;color:#e2e8f0;cursor:pointer;
-    padding:8px 14px;border-radius:8px;
-    background:#0b1a26;border:1px solid rgba(255,255,255,0.1);
-  }
-  .btn:hover{border-color:var(--accent)}
-  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .btn[aria-pressed="false"]{color:var(--muted)}
-  .wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;gap:28px}
-  /* large centered circle */
-  .big{
-    display:grid;place-items:center;
-    width:clamp(180px,28vmin,420px);
-    height:clamp(180px,28vmin,420px);
-    border-radius:50%;
-    background:radial-gradient(circle at 30% 25%, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 30%), linear-gradient(180deg,#07202b,#001218);
-    box-shadow:0 12px 30px rgba(3,7,18,0.6), inset 0 6px 18px rgba(255,255,255,0.02);
-    border:4px solid rgba(255,255,255,0.04);
-    text-align:center;
-  }
-  .big .num{
-    font-weight:700;
-    font-size:clamp(28px,12vmin,120px);
-    line-height:1;
-    color:var(--accent);
-    text-shadow:0 6px 24px rgba(16,185,129,0.12);
-    user-select:none;
-  }
-  .big .label{font-size:14px;color:var(--muted);margin-top:6px}
-
-  /* history row */
-  .history-wrap{width:100%;max-width:1100px}
-  .history-title{font-size:13px;color:var(--muted);margin:0 0 8px 8px}
-  .history{
-    display:flex;
-    gap:12px;
-    padding:12px;
-    overflow:hidden;
-    align-items:center;
-    border-radius:12px;
-    background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-    box-shadow:0 6px 18px rgba(2,6,12,0.5);
-  }
-  .track{
-    display:flex;
-    gap:12px;
-    align-items:center;
-    transition:transform 300ms ease;
-    will-change:transform;
-  }
-  .dot{
-    min-width:56px;
-    min-height:56px;
-    display:grid;place-items:center;
-    border-radius:50%;
-    background:linear-gradient(180deg,#071a25,#06202b);
-    border:2px solid rgba(255,255,255,0.03);
-    color:#cfeee1;
-    font-weight:600;
-    box-shadow:0 8px 18px rgba(6,14,20,0.6);
-    flex-shrink:0;
-  }
-  .dot.small{min-width:44px;min-height:44px;font-size:14px}
-  .dot .sub{display:block;font-size:11px;color:var(--muted);font-weight:500;margin-top:6px}
-  /* allow horizontal scroll on small screens */
-  @media (max-width:540px){
-    .history{overflow:auto}
-  }
-  /* called-numbers board: one row per letter */
-  .board-wrap{width:100%;max-width:1100px}
-  .board{width:100%;border-collapse:separate;border-spacing:4px;table-layout:fixed;
-    padding:8px;border-radius:12px;background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-    box-shadow:0 6px 18px rgba(2,6,12,0.5)}
-  .board th{font-size:20px;font-weight:800;color:var(--accent);width:44px;text-align:center}
-  .board th .letter{display:block}
-  .board th .count{display:block;font-size:11px;font-weight:500;color:var(--muted)}
-  .board td.cell{
-    text-align:center;padding:6px 0;border-radius:6px;font-size:14px;font-weight:600;
-    color:rgba(207,238,225,0.35);background:#071a25;border:1px solid rgba(255,255,255,0.03);
-    font-variant-numeric:tabular-nums;
-  }
-  .board td.cell.called{color:#04130d;background:var(--accent);border-color:var(--accent)}
-  .board td.cell.last{outline:2px solid #fff;outline-offset:1px}
-  /* phones: shrink the 15-column board so it fits the screen without scrolling */
-  @media (max-width:720px){
-    .wrap{padding:16px 8px}
-    .board{border-spacing:2px;padding:4px}
-    .board th{font-size:14px;width:22px}
-    .board th .count{font-size:9px}
-    .board td.cell{padding:4px 0;border-radius:4px;font-size:clamp(9px,2.9vw,14px);letter-spacing:-0.03em}
-    .board td.cell.last{outline-width:1px;outline-offset:0}
-  }
-</style>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="app-header">
@@ -123,6 +13,7 @@
     <div class="controls">
       <button type="button" class="btn" id="soundToggle" aria-pressed="true">🔊 Sound on</button>
       <button type="button" class="btn" id="resetBtn">↺ Reset game</button>
+      <button type="button" class="btn" id="autoPilotBtn" aria-pressed="false">▶ Auto pilot</button>
     </div>
   </header>
   <div class="wrap" role="main" aria-live="polite">
@@ -132,6 +23,7 @@
         <div class="label">Current Number</div>
       </div>
     </div>
+    <div class="countdown" id="countdown" aria-live="polite"></div>
 
     <div class="history-wrap">
       <div class="history-title">History</div>
@@ -143,11 +35,22 @@
       <div class="history-title">Called by letter</div>
       <table class="board" id="board" aria-label="Called numbers by letter"><tbody id="boardBody"></tbody></table>
     </div>
+    <section class="live-card" id="liveCard" aria-label="Invite viewers" hidden>
+      <div class="qr" id="qr" role="img" aria-label="QR code to watch this game"></div>
+      <div class="live-info">
+        <div class="viewers" id="viewerCount">👁 0 watching</div>
+        <a id="joinLink" href="#" target="_blank" rel="noopener">Open viewer link</a>
+        <p class="hint" id="localHint" hidden>Opened via localhost: other devices can't use this code. Open the page by its network address instead.</p>
+      </div>
+    </section>
   </div>
 
 <script src="board.js"></script>
 <script src="config.js"></script>
 <script src="api.js"></script>
+<script src="live.js"></script>
+<script src="autopilot.js"></script>
+<script src="vendor/qrcode.js"></script>
 <script>
   let state = {
     currentNumber: 'Push',
@@ -162,53 +65,10 @@
 
   const boardBody = document.getElementById('boardBody');
 
-  function renderBoard(){
-    boardBody.innerHTML = '';
-    for (const row of BingoBoard.buildBoard(state.history)) {
-      const tr = document.createElement('tr');
-      tr.dataset.letter = row.letter;
-      const th = document.createElement('th');
-      th.scope = 'row';
-      const letter = document.createElement('span');
-      letter.className = 'letter';
-      letter.textContent = row.letter;
-      th.appendChild(letter);
-      const count = document.createElement('span');
-      count.className = 'count';
-      count.textContent = row.calledCount;
-      th.appendChild(count);
-      tr.appendChild(th);
-      for (const c of row.numbers) {
-        const td = document.createElement('td');
-        td.className = 'cell' + (c.called ? ' called' : '') + (c.last ? ' last' : '');
-        td.textContent = c.number;
-        td.setAttribute('aria-label', row.letter + c.number + (c.called ? ' called' : ''));
-        tr.appendChild(td);
-      }
-      boardBody.appendChild(tr);
-    }
-  }
-
   function render(){
-    renderBoard();
+    BingoBoard.renderBoard(boardBody, state.history);
     elCurrent.textContent = state.currentNumber ?? '--';
-
-    // clear & render track
-    track.innerHTML = '';
-
-    for (const [key, value] of Object.entries(state.history)) {
-    console.log(`>>>>> ${key}: ${value}`);
-        const d = document.createElement('div');
-        d.className = 'dot small';
-        d.textContent = value;
-        track.appendChild(d);
-    }
-
-    requestAnimationFrame(()=> {
-      if (historyContainer.scrollWidth > historyContainer.clientWidth) {
-        historyContainer.scrollTo({ left: historyContainer.scrollWidth, behavior: 'smooth' });
-      }
-    });
+    BingoBoard.renderTrack(track, historyContainer, state.history);
   }
 
   function pushNumber(n){
@@ -219,16 +79,26 @@
     render();
   }
 
+  // draws one ball; rejects on failure. `due` (auto pilot only) is the nextDrawAt this draw
+  // is for: the server skips it if another dealer tab already drew that tick.
+  async function loadDraw(gameKey, due){
+    const url = API + '/Get?GameKey=' + encodeURIComponent(gameKey) + (due ? '&due=' + encodeURIComponent(due) : '');
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('fetch failed');
+    const json = await res.json();
+    console.log('Fetched game state:', json);
+    if (typeof json === 'string') {
+      // e.g. "Game Over!": keep the board as the server has it and report the message
+      await loadState().catch((e) => console.warn('Could not reload the game', e));
+      throw new Error(json);
+    }
+    state.currentNumber = json.currentNumber;
+    state.history = json.history || [];
+    render();
+  }
+
   async function fetchGame(gameKey){
-    try{
-      const res = await fetch(API + '/Get?GameKey=' + encodeURIComponent(gameKey));
-      if(!res.ok) throw new Error('fetch failed');
-      const json = await res.json();
-      console.log('Fetched game state:', json);
-      state.currentNumber = json.currentNumber;
-      state.history = json.history || [];
-      render();
-    }catch(e){alert(e.message);}
+    try{ await loadDraw(gameKey); }catch(e){alert(e.message);}
   }
   
 
@@ -270,18 +140,144 @@
 
   render();
 
+  // single flight: quick first actions share one /GetGameKey call
+  let keyPromise = null;
+  function ensureGameKey() {
+    if (gameKey) return Promise.resolve();
+    keyPromise ??= (async () => {
+      const res = await fetch(API + '/GetGameKey');
+      if(!res.ok) throw new Error('Game key fetch failed');
+      gameKey = await res.json();
+      console.log('Fetched game key:', gameKey);
+      // keep the game across a refresh
+      history.replaceState(null, '', BingoLive.withParam(location.href, 'game', gameKey));
+      openEvents();
+    })().catch((e) => { keyPromise = null; throw e; });
+    return keyPromise;
+  }
+
   async function drawNext() {
         playDrawSound();
-        if (!gameKey) {
-            const res = await fetch(API + '/GetGameKey');
-            if(!res.ok) throw new Error('Game key fetch failed');
-            const temp = await res.json();
-            gameKey = temp;
-            console.log('Fetched game key:', gameKey);
-        }
+        await ensureGameKey();
         await fetchGame(gameKey);
     }
   elCurrent.addEventListener('click', drawNext, false);
+
+  // ---- live view: snapshots, SSE, QR invite, viewer count, auto pilot ----
+  const autoPilotBtn = document.getElementById('autoPilotBtn');
+  const countdownEl = document.getElementById('countdown');
+  const liveCard = document.getElementById('liveCard');
+  const qrEl = document.getElementById('qr');
+  const joinLink = document.getElementById('joinLink');
+  const viewerCountEl = document.getElementById('viewerCount');
+  document.getElementById('localHint').hidden = !BingoLive.isLocalOnly(location.hostname);
+  let snap = null;
+  let offsetMs = 0;
+  let events = null;
+  const RECONNECT_MS = 3000;
+
+  const gameUrl = (path) => API + path + '?GameKey=' + encodeURIComponent(gameKey);
+
+  const autopilot = BingoAutoPilot.create({
+    draw: autoDraw,
+    now: () => Date.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (id) => clearTimeout(id),
+    // after a failed draw: reload the state, whose snapshot re-syncs (and so retries) auto pilot
+    resync: () => loadState(),
+  });
+
+  // like drawNext, but rejects on failure (no alert) so auto pilot can warn and retry
+  async function autoDraw(due) {
+    playDrawSound();
+    await ensureGameKey();
+    await loadDraw(gameKey, due);
+    await loadState();
+  }
+
+  async function loadState() {
+    const res = await fetch(gameUrl('/State'));
+    if (!res.ok) throw new Error('State fetch failed: ' + res.status);
+    applySnapshot(await res.json());
+  }
+
+  function applySnapshot(s) {
+    snap = s;
+    const view = BingoLive.viewState(s, 'Push');
+    state.currentNumber = view.currentNumber;
+    state.history = view.history;
+    render();
+    showJoin(s.joinCode);
+    viewerCountEl.textContent = '👁 ' + (s.viewerCount ?? 0) + ' watching';
+    const offset = BingoLive.clockOffset(s.serverTime, Date.now());
+    if (!Number.isNaN(offset)) offsetMs = offset;
+    renderAutoPilot();
+    renderCountdown();
+    autopilot.sync(s, offsetMs);
+  }
+
+  function showJoin(joinCode) {
+    if (!joinCode) return;
+    const url = BingoLive.joinUrl(location, joinCode);
+    if (qrEl.dataset.url !== url) {
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      qrEl.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2 });
+      qrEl.dataset.url = url;
+      joinLink.href = url;
+    }
+    liveCard.hidden = false;
+  }
+
+  function renderAutoPilot() {
+    const on = Boolean(snap && snap.autoPilot && snap.autoPilot.on);
+    autoPilotBtn.setAttribute('aria-pressed', String(on));
+    autoPilotBtn.textContent = on ? '■ Stop' : '▶ Auto pilot';
+  }
+
+  function renderCountdown() {
+    countdownEl.textContent = snap ? BingoLive.countdownText(snap, Date.now(), offsetMs) : '';
+  }
+  setInterval(renderCountdown, 250);
+
+  function openEvents() {
+    if (events || typeof EventSource === 'undefined') return;
+    events = new EventSource(gameUrl('/Events'));
+    events.addEventListener('state', (e) => {
+      try { applySnapshot(JSON.parse(e.data)); }
+      catch (err) { console.warn('Ignoring bad live update', err); }
+    });
+    events.addEventListener('error', () => {
+      console.warn('Live updates interrupted');
+      if (events.readyState !== EventSource.CLOSED) return; // the browser retries by itself
+      // the browser gave up (non-200, e.g. a proxy 502 while the API restarts): reload, then reopen
+      events.close();
+      events = null;
+      // in that order: a reload that lands after the first live frame would overwrite it with older state
+      setTimeout(() => {
+        loadState()
+          .catch((e) => console.warn('Could not reload the game', e))
+          .then(openEvents);
+      }, RECONNECT_MS);
+    });
+  }
+
+  autoPilotBtn.addEventListener('click', async () => {
+    try {
+      await ensureGameKey();
+      const on = !(snap && snap.autoPilot && snap.autoPilot.on);
+      const res = await fetch(gameUrl('/AutoPilot') + '&on=' + on, { method: 'POST' });
+      if (!res.ok) throw new Error('Auto pilot toggle failed: ' + res.status);
+      await loadState();
+    } catch (e) { console.warn('Auto pilot toggle failed', e); }
+  });
+
+  gameKey = BingoLive.gameKeyFromUrl(location.search) ?? undefined;
+  if (gameKey) {
+    loadState().catch((e) => console.warn('Could not restore the game', e));
+    openEvents();
+  }
 
   async function resetGame() {
     if (!confirm('Reset the game? All drawn numbers will be cleared.')) return;
@@ -289,6 +285,10 @@
       if (gameKey) {
         const res = await fetch(API + '/Reset?GameKey=' + encodeURIComponent(gameKey), { method: 'POST' });
         if(!res.ok) throw new Error('Reset failed');
+        // don't wait for the live stream: cancel any pending auto draw and, if the page
+        // holds a live snapshot (auto pilot / server state to resync), reload it now
+        autopilot.stop();
+        if (snap) loadState().catch((e) => console.warn('Could not reload the game after reset', e));
       }
       state.currentNumber = 'Push';
       state.history = [];

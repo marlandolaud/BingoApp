@@ -1,0 +1,148 @@
+/* Shared styles for the dealer page (index.html) and the player page (watch.html). */
+
+/* Atkinson Hyperlegible Next (SIL OFL 1.1, see vendor/fonts/OFL.txt): designed for
+   legibility, with clearly distinct glyphs such as 0/O, 1/l/I and 6/8. Self-hosted so
+   players behind the tunnel never fetch from a third party. Latin subset, variable weight. */
+@font-face{
+  font-family:"Atkinson Hyperlegible Next";
+  font-style:normal;
+  font-display:swap;
+  font-weight:200 800;
+  src:url("vendor/fonts/atkinson-hyperlegible-next.woff2") format("woff2-variations");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+:root{
+  --bg:#0f1720;
+  --card:#0b1220;
+  --accent:#10b981;
+  --muted:#94a3b8;
+}
+html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#071022);font-family:"Atkinson Hyperlegible Next",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:white}
+body{display:flex;flex-direction:column}
+/* header */
+.app-header{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding:16px 24px;
+  background:rgba(255,255,255,0.02);
+  border-bottom:1px solid rgba(255,255,255,0.05);
+}
+.app-header h1{margin:0;font-size:22px;font-weight:800;letter-spacing:0.04em}
+.app-header h1 span{color:var(--accent)}
+.controls{display:flex;gap:10px;flex-wrap:wrap}
+.btn{
+  font:inherit;font-size:14px;font-weight:600;color:#e2e8f0;cursor:pointer;
+  padding:8px 14px;border-radius:8px;
+  background:#0b1a26;border:1px solid rgba(255,255,255,0.1);
+}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn[aria-pressed="false"]{color:var(--muted)}
+.wrap{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;gap:28px}
+/* large centered circle */
+.big{
+  display:grid;place-items:center;
+  width:clamp(180px,28vmin,420px);
+  height:clamp(180px,28vmin,420px);
+  border-radius:50%;
+  background:radial-gradient(circle at 30% 25%, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 30%), linear-gradient(180deg,#07202b,#001218);
+  box-shadow:0 12px 30px rgba(3,7,18,0.6), inset 0 6px 18px rgba(255,255,255,0.02);
+  border:4px solid rgba(255,255,255,0.04);
+  text-align:center;
+}
+.big .num{
+  font-weight:700;
+  font-size:clamp(28px,12vmin,120px);
+  line-height:1;
+  color:var(--accent);
+  text-shadow:0 6px 24px rgba(16,185,129,0.12);
+  user-select:none;
+}
+.big .label{font-size:14px;color:var(--muted);margin-top:6px}
+.countdown{margin-top:-14px;font-size:15px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+.countdown:empty{display:none}
+
+/* invite card: QR join code + live viewer count */
+.live-card{
+  position:absolute;top:24px;right:24px;width:180px;box-sizing:border-box;
+  display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px;
+  border-radius:12px;background:var(--card);border:1px solid rgba(255,255,255,0.05);
+  box-shadow:0 6px 18px rgba(2,6,12,0.5);font-size:13px;text-align:center;
+}
+.live-card[hidden]{display:none}
+.live-card .qr{background:#fff;border-radius:8px;line-height:0}
+.live-card .qr svg{display:block;width:140px;height:140px}
+.live-card a{color:var(--accent)}
+.live-card .viewers{font-weight:600;color:#e2e8f0}
+.live-card .hint{margin:0;font-size:11px;color:var(--muted)}
+
+/* history row */
+.history-wrap{width:100%;max-width:1100px}
+.history-title{font-size:13px;color:var(--muted);margin:0 0 8px 8px}
+.history{
+  display:flex;
+  gap:12px;
+  padding:12px;
+  overflow:hidden;
+  align-items:center;
+  border-radius:12px;
+  background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  box-shadow:0 6px 18px rgba(2,6,12,0.5);
+}
+.track{
+  display:flex;
+  gap:12px;
+  align-items:center;
+  transition:transform 300ms ease;
+  will-change:transform;
+}
+.dot{
+  min-width:56px;
+  min-height:56px;
+  display:grid;place-items:center;
+  border-radius:50%;
+  background:linear-gradient(180deg,#071a25,#06202b);
+  border:2px solid rgba(255,255,255,0.03);
+  color:#cfeee1;
+  font-weight:600;
+  box-shadow:0 8px 18px rgba(6,14,20,0.6);
+  flex-shrink:0;
+}
+.dot.small{min-width:44px;min-height:44px;font-size:14px}
+.dot .sub{display:block;font-size:11px;color:var(--muted);font-weight:500;margin-top:6px}
+/* allow horizontal scroll on small screens */
+@media (max-width:540px){
+  .history{overflow:auto}
+}
+/* called-numbers board: one row per letter */
+.board-wrap{width:100%;max-width:1100px}
+.board{width:100%;border-collapse:separate;border-spacing:4px;table-layout:fixed;
+  padding:8px;border-radius:12px;background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  box-shadow:0 6px 18px rgba(2,6,12,0.5)}
+.board th{font-size:20px;font-weight:800;color:var(--accent);width:44px;text-align:center}
+.board th .letter{display:block}
+.board th .count{display:block;font-size:11px;font-weight:500;color:var(--muted)}
+.board td.cell{
+  text-align:center;padding:6px 0;border-radius:6px;font-size:14px;font-weight:600;
+  color:rgba(207,238,225,0.35);background:#071a25;border:1px solid rgba(255,255,255,0.03);
+}
+.board td.cell.called{color:#04130d;background:var(--accent);border-color:var(--accent)}
+.board td.cell.last{outline:2px solid #fff;outline-offset:1px}
+/* phones: shrink the 15-column board so it fits the screen without scrolling */
+@media (max-width:720px){
+  .wrap{padding:16px 8px}
+  .board{border-spacing:2px;padding:4px}
+  .board th{font-size:14px;width:22px}
+  .board th .count{font-size:9px}
+  .board td.cell{padding:4px 0;border-radius:4px;font-size:clamp(9px,2.9vw,14px);letter-spacing:-0.03em}
+  .board td.cell.last{outline-width:1px;outline-offset:0}
+  /* phones: the invite card sits below the board */
+  /* the QR gets most of the screen width so it scans easily from across a table */
+  .live-card{position:static;width:100%;max-width:320px}
+  .live-card .qr svg{width:min(260px,70vw);height:auto;aspect-ratio:1}
+  .live-card .live-info{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+}
+
+/* player page */
+.status{font-size:13px;font-weight:600;color:var(--muted)}
+.not-found{font-size:22px;font-weight:700;color:#fca5a5}
+.not-found[hidden]{display:none}

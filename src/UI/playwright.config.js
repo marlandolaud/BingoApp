@@ -2,6 +2,7 @@ const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './tests',
+  globalTeardown: require.resolve('./tests/integration/global-teardown.js'),
   use: { baseURL: 'http://localhost:8080', headless: true },
   projects: [
     // UI tests with the API mocked via route interception
@@ -15,9 +16,10 @@ module.exports = defineConfig({
     { command: 'npx http-server -p 8080 -c-1 -s .', url: 'http://localhost:8080', reuseExistingServer: true },
     ...(process.env.INTEGRATION
       ? [{
-          command: 'DOTNET_ROLL_FORWARD=Major dotnet run --project ../BingoBongo/BingoBongo.csproj --no-launch-profile --urls http://localhost:5001',
+          command: 'sh scripts/integration-api.sh',
           url: 'http://localhost:5001/GetGameKey',
-          reuseExistingServer: true,
+          // never test against a stale API left running from an older build
+          reuseExistingServer: false,
           timeout: 120000,
         }]
       : []),

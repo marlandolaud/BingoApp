@@ -3,12 +3,13 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/unit/",
-    "test:coverage": "c8 --check-coverage --lines 90 --branches 90 --functions 90 --statements 90 --include board.js --include api.js node --test tests/unit/",
+    "test:coverage": "c8 --check-coverage --lines 90 --branches 90 --functions 90 --statements 90 --include board.js --include api.js --include live.js --include autopilot.js node --test tests/unit/",
     "test:e2e": "playwright test --project=e2e",
     "test:integration": "INTEGRATION=1 playwright test --project=integration",
     "test:mutation": "stryker run",
     "serve": "http-server -a 0.0.0.0 -p 8080 -c-1 .",
-    "api": "DOTNET_ROLL_FORWARD=Major dotnet run --project ../BingoBongo/BingoBongo.csproj --launch-profile lan",
+    "api": "dotnet run --project ../BingoBongo/BingoBongo.csproj --launch-profile lan",
+    "db": "docker run -d --name bingo-dev-db -p 55432:5432 -e POSTGRES_PASSWORD=bingo -e POSTGRES_DB=bingo postgres:17-alpine || docker start bingo-dev-db",
     "test:docker": "DOCKER=1 playwright test --project=docker",
     "test:lan": "LAN=1 playwright test --project=integration lan.spec.js"
   },
@@ -17,5 +18,12 @@
     "@stryker-mutator/core": "^8.7.1",
     "c8": "^10.1.3",
     "http-server": "^14.1.1"
+  },
+  "overrides": {
+    "tmp": "^0.2.7",
+    "ajv": "^8.20.0",
+    "@babel/core": "^7.29.16",
+    "glob": "^14.0.6",
+    "minimatch": "^11.0.1"
   }
 }

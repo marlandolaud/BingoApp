@@ -54,3 +54,7 @@ TestResult.xml
 nunit-*.xml
 # Local secrets (docker compose)
 .env
+
+# .NET coverage / mutation output
+src/BingoBongo.Tests/coverage.json
+src/BingoBongo.Tests/StrykerOutput/

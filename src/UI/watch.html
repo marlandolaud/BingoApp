@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bingo Live Viewer</title>
+<!-- no /favicon.ico request: it is not exempt from the tunnel's basic auth -->
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1><span>BINGO</span> Live</h1>
+    <div class="status" id="status" role="status">Connecting…</div>
+  </header>
+  <div class="wrap" role="main" aria-live="polite">
+    <div class="not-found" id="notFound" hidden>Game not found</div>
+    <div class="big" id="big">
+      <div>
+        <div class="num" id="currentNumber">--</div>
+        <div class="label">Current Number</div>
+      </div>
+    </div>
+    <div class="countdown" id="countdown" aria-live="polite"></div>
+
+    <div class="history-wrap">
+      <div class="history-title">History</div>
+      <div class="history" id="historyContainer" aria-label="Called numbers history">
+        <div class="track" id="track"></div>
+      </div>
+    </div>
+    <div class="board-wrap">
+      <div class="history-title">Called by letter</div>
+      <table class="board" id="board" aria-label="Called numbers by letter"><tbody id="boardBody"></tbody></table>
+    </div>
+  </div>
+
+<script src="board.js"></script>
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script src="live.js"></script>
+<script>
+  // Read-only viewer: never draws, resets or controls auto pilot.
+  const API = BingoApi.apiBase(window.location, window.BINGO_API_BASE);
+  const elCurrent = document.getElementById('currentNumber');
+  const track = document.getElementById('track');
+  const historyContainer = document.getElementById('historyContainer');
+  const boardBody = document.getElementById('boardBody');
+  const countdownEl = document.getElementById('countdown');
+  const statusEl = document.getElementById('status');
+  const notFoundEl = document.getElementById('notFound');
+  const WAITING = 'Waiting for dealer…';
+  const RECONNECT_MS = 3000;
+
+  let snap = null;
+  let offsetMs = 0;
+  let events = null;
+  let connection = 'Connecting…';
+
+  function render(view) {
+    BingoBoard.renderBoard(boardBody, view.history);
+    elCurrent.textContent = view.currentNumber;
+    BingoBoard.renderTrack(track, historyContainer, view.history);
+  }
+
+  function renderCountdown() {
+    const text = snap ? BingoLive.countdownText(snap, Date.now(), offsetMs) : '';
+    countdownEl.textContent = text;
+    statusEl.textContent = text === WAITING ? WAITING : connection;
+  }
+  setInterval(renderCountdown, 250);
+
+  function applySnapshot(s) {
+    snap = s;
+    render(BingoLive.viewState(s, '--'));
+    const offset = BingoLive.clockOffset(s.serverTime, Date.now());
+    if (!Number.isNaN(offset)) offsetMs = offset;
+    renderCountdown();
+  }
+
+  function setConnection(text) {
+    connection = text;
+    renderCountdown();
+  }
+
+  function showNotFound() {
+    notFoundEl.hidden = false;
+    statusEl.hidden = true;
+  }
+
+  function openEvents(viewerId) {
+    if (events || typeof EventSource === 'undefined') return;
+    events = new EventSource(API + '/watch/' + viewerId + '/events');
+    events.addEventListener('open', () => setConnection(BingoLive.statusText(events.readyState)));
+    events.addEventListener('state', (e) => {
+      try { applySnapshot(JSON.parse(e.data)); }
+      catch (err) { console.warn('Ignoring bad live update', err); }
+    });
+    events.addEventListener('error', () => {
+      if (events.readyState === EventSource.OPEN) return;
+      setConnection(BingoLive.statusText(events.readyState));
+      if (events.readyState === EventSource.CLOSED) {
+        // the browser gave up (non-200 response): recheck the game, then reopen
+        events.close();
+        events = null;
+        setTimeout(() => watch(viewerId), RECONNECT_MS);
+      }
+    });
+  }
+
+  async function watch(viewerId) {
+    try {
+      // one-off check so an unknown viewer shows "not found" instead of reconnecting forever
+      const res = await fetch(API + '/watch/' + viewerId + '/state');
+      if (res.status === 404) return showNotFound();
+      if (res.ok) applySnapshot(await res.json());
+    } catch (e) { console.warn('Could not load the game', e); }
+    openEvents(viewerId);
+  }
+
+  async function join(joinCode) {
+    try {
+      const res = await fetch(API + '/viewers?join=' + encodeURIComponent(joinCode), { method: 'POST' });
+      if (res.status === 404) return showNotFound();
+      if (!res.ok) throw new Error('Join failed: ' + res.status);
+      const { viewerId } = await res.json();
+      const next = new URL(location.href);
+      next.searchParams.delete('join');
+      history.replaceState(null, '', BingoLive.withParam(next.toString(), 'v', viewerId));
+      watch(viewerId);
+    } catch (e) {
+      // server or network trouble (not an unknown game): keep trying
+      console.warn('Could not join the game', e);
+      setConnection('Reconnecting…');
+      setTimeout(() => join(joinCode), RECONNECT_MS);
+    }
+  }
+
+  const viewerId = BingoLive.viewerIdFromUrl(location.search);
+  const joinCode = BingoLive.joinCodeFromUrl(location.search);
+  if (viewerId) watch(viewerId);
+  else if (joinCode) join(joinCode);
+  else showNotFound();
+</script>
+</body>
+</html>
