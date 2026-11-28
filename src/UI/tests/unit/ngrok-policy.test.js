@@ -20,7 +20,7 @@ function render(env) {
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 
-const EXPR = "!(req.url.path in ['/watch.html','/board.js','/api.js','/config.js','/live.js','/api/viewers'] || req.url.path.matches('^/api/watch/[0-9a-fA-F-]{36}/(state|events)$'))";
+const EXPR = "!(req.url.path in ['/watch.html','/styles.css','/vendor/fonts/atkinson-hyperlegible-next.woff2','/board.js','/api.js','/config.js','/live.js','/api/viewers'] || req.url.path.matches('^/api/watch/[0-9a-fA-F-]{36}/(state|events)$'))";
 
 function expression() {
   const { out } = render({ BASIC_AUTH_USER: 'host', BASIC_AUTH_PASS: 'letmein123' });
@@ -79,7 +79,7 @@ const isExempt = ({ list, patterns }, p) => list.includes(p) || patterns.some(r 
 
 test('exempts exactly the viewer paths', () => {
   const { expr, list, patterns } = parseExemption();
-  assert.deepEqual(list, ['/watch.html', '/board.js', '/api.js', '/config.js', '/live.js', '/api/viewers']);
+  assert.deepEqual(list, ['/watch.html', '/styles.css', '/vendor/fonts/atkinson-hyperlegible-next.woff2', '/board.js', '/api.js', '/config.js', '/live.js', '/api/viewers']);
   assert.deepEqual(patterns, ['^/api/watch/[0-9a-fA-F-]{36}/(state|events)$']);
   assert.ok(!expr.includes('startsWith'), 'no prefix match (path traversal)');
 });

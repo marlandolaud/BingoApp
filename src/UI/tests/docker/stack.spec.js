@@ -100,3 +100,12 @@ test.describe('ngrok viewer exemption', () => {
     expect(traversal.status()).toBe(401);
   });
 });
+
+test('nginx serves the shared stylesheet and the self-hosted font', async ({ request }) => {
+  const css = await request.get(UI + '/styles.css');
+  expect(css.status()).toBe(200);
+  expect(css.headers()['content-type']).toContain('text/css');
+  const font = await request.get(UI + '/vendor/fonts/atkinson-hyperlegible-next.woff2');
+  expect(font.status()).toBe(200);
+  expect(font.headers()['content-type']).toBe('font/woff2');
+});

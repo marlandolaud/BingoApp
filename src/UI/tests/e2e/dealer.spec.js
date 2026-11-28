@@ -253,6 +253,26 @@ test('a closed live stream is reopened and the viewer count updates', async ({ p
   expect(hits(requests, '/State').length).toBeGreaterThanOrEqual(2);
 });
 
+test('a slow reload after a reopen does not overwrite the newer live frame', async ({ page }) => {
+  const state = { snap: snapshot() };
+  await mockApi(page, state);
+  let events = 0, states = 0;
+  await page.route(`${API}/Events?*`, r =>
+    ++events === 1 ? r.fulfill({ status: 502, body: '' }) : r.fulfill(sseBody(snapshot({ viewerCount: 5 }))));
+  await page.route(`${API}/State?*`, async r => {
+    // the reload that comes with the reopen is slow; it still carries the old count
+    if (++states > 1) await new Promise(res => setTimeout(res, 500));
+    return r.fulfill({ json: state.snap });
+  });
+  await page.goto('/?game=' + KEY);
+  await expect(page.locator('#viewerCount')).toHaveText('👁 2 watching');
+  await page.waitForResponse(r => new URL(r.url()).pathname === '/State' && states === 2, { timeout: 10000 });
+  await expect(page.locator('#viewerCount')).toHaveText('👁 5 watching');
+  // the stream frame is newer than the reload, so it must still be showing
+  await page.waitForTimeout(300);
+  await expect(page.locator('#viewerCount')).toHaveText('👁 5 watching');
+});
+
 test('an auto pilot draw names the tick it is for', async ({ page }) => {
   await page.clock.install({ time: T0 });
   const next = new Date(T0 + 1000).toISOString();
