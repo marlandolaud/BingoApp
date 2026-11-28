@@ -16,5 +16,5 @@ for _ in $(seq 1 60); do
 done
 if [ "$ready" != 1 ]; then echo "bingo-it-db did not become ready within 60s: $err" >&2; exit 1; fi
 exec env ConnectionStrings__Bingo='Host=localhost;Port=55433;Database=bingo;Username=postgres;Password=bingo' \
-  AutoPilot__IntervalSeconds=2 Live__HeartbeatSeconds=2 DOTNET_ROLL_FORWARD=Major \
+  AutoPilot__IntervalSeconds=2 Live__HeartbeatSeconds=2 \
   dotnet run --project ../BingoBongo/BingoBongo.csproj --no-launch-profile --urls http://localhost:5001

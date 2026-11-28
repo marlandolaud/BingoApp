@@ -1,6 +1,6 @@
 # BingoApp
 
-A bingo caller (ASP.NET Core API + static UI) with live read-only viewing for players.
+A bingo caller (ASP.NET Core 10 API + static UI) with live read-only viewing for players.
 
 ## Run locally
 
@@ -67,9 +67,9 @@ a separate step (for example `dotnet ef database update` from `src/BingoBongo`) 
 
 | What | Command |
 |------|---------|
-| .NET unit + integration (needs Docker for a Postgres Testcontainer) | `cd src && DOTNET_ROLL_FORWARD=Major dotnet test` |
+| .NET unit + integration (needs Docker for a Postgres Testcontainer) | `cd src && dotnet test` |
 | .NET coverage gate (90% line and branch) | `cd src && dotnet test /p:CollectCoverage=true /p:Threshold=90 /p:ThresholdType=line%2cbranch /p:ExcludeByFile="**/Migrations/*.cs%2c**/WeatherForecast.cs"` |
-| .NET mutation testing (unit tests only, score must stay at 80 or more) | `cd src && dotnet tool restore && cd BingoBongo.Tests && BINGO_SKIP_DB=1 DOTNET_ROLL_FORWARD=Major dotnet stryker` |
+| .NET mutation testing (unit tests only, score must stay at 80 or more) | `cd src && dotnet tool restore && cd BingoBongo.Tests && BINGO_SKIP_DB=1 dotnet stryker` |
 | UI unit tests + 90% coverage | `cd src/UI && npm run test:coverage` |
 | UI mutation testing | `npm run test:mutation` |
 | Playwright e2e (mocked API) | `npm run test:e2e` |
