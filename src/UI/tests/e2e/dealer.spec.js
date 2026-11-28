@@ -96,6 +96,27 @@ test('shows QR with the join link and viewer count', async ({ page }) => {
   await expect(page.locator('#viewerCount')).toHaveText('👁 2 watching');
 });
 
+// Phones scan the code from across a table, so it gets most of the screen width there.
+test('QR is large and square on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockApi(page, { snap: snapshot() });
+  await page.goto('/?game=' + KEY);
+  const box = await page.locator('#qr svg').boundingBox();
+  expect(box.width).toBeGreaterThanOrEqual(240);
+  expect(Math.abs(box.width - box.height)).toBeLessThan(1);
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+});
+
+test('QR keeps its compact size on desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mockApi(page, { snap: snapshot() });
+  await page.goto('/?game=' + KEY);
+  const box = await page.locator('#qr svg').boundingBox();
+  expect(box.width).toBe(140);
+  expect(box.height).toBe(140);
+});
+
 test('local hint shows on localhost', async ({ page }) => {
   await mockApi(page, { snap: snapshot() });
   await page.goto('/?game=' + KEY);

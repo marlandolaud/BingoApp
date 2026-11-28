@@ -136,9 +136,10 @@ body{display:flex;flex-direction:column}
   .board td.cell{padding:4px 0;border-radius:4px;font-size:clamp(9px,2.9vw,14px);letter-spacing:-0.03em}
   .board td.cell.last{outline-width:1px;outline-offset:0}
   /* phones: the invite card sits below the board */
-  .live-card{position:static;width:100%;max-width:320px;flex-direction:row;text-align:left}
-  .live-card .qr svg{width:100%;height:110px}
-  .live-card .live-info{display:flex;flex-direction:column;gap:6px;min-width:0}
+  /* the QR gets most of the screen width so it scans easily from across a table */
+  .live-card{position:static;width:100%;max-width:320px}
+  .live-card .qr svg{width:min(260px,70vw);height:auto;aspect-ratio:1}
+  .live-card .live-info{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
 }
 
 /* player page */
